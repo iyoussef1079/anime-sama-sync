@@ -1,4 +1,3 @@
-// extension/src/popup/popup.ts
 import { SyncMessage, SyncState, AnimeProgress } from '../../../shared/types';
 import { LocalStore } from '../storage/localStore';
 
@@ -109,6 +108,7 @@ class PopupManager {
                     resolve(null);
                     return;
                 }
+                console.log('Token reçu:', token);
                 resolve(token || null);
             });
         });

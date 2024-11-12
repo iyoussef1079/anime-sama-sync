@@ -1,32 +1,40 @@
-import { initializeApp } from 'firebase/app';
+// extension/src/services/authService.ts
 import { 
-  getAuth, 
-  signInWithPopup, 
+  signInWithCredential,
   GoogleAuthProvider,
   onAuthStateChanged,
   User 
 } from 'firebase/auth';
-
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
+import { auth } from '../config/firebase';
 
 export class AuthService {
   static async signInWithGoogle(): Promise<User | null> {
     try {
-      const result = await signInWithPopup(auth, provider);
-      return result.user;
+      // 1. Obtenir le token OAuth via chrome.identity
+      const token = await new Promise<string>((resolve, reject) => {
+        chrome.identity.getAuthToken({ interactive: true }, (token) => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else if (token) {
+            resolve(token);
+          } else {
+            reject(new Error('No token received'));
+          }
+        });
+      });
+
+      console.log('Got OAuth token from Chrome');
+
+      // 2. Créer des credentials Google avec ce token
+      const credential = GoogleAuthProvider.credential(null, token);
+
+      // 3. S'authentifier avec Firebase
+      const userCredential = await signInWithCredential(auth, credential);
+      console.log('Firebase authentication successful');
+
+      return userCredential.user;
     } catch (error) {
-      console.error('Erreur de connexion:', error);
+      console.error('Authentication error:', error);
       return null;
     }
   }
@@ -47,6 +55,21 @@ export class AuthService {
   }
 
   static async signOut(): Promise<void> {
-    await auth.signOut();
+    try {
+      await auth.signOut();
+      // Clear Chrome identity token
+      await new Promise<void>((resolve, reject) => {
+        chrome.identity.clearAllCachedAuthTokens(() => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve();
+          }
+        });
+      });
+    } catch (error) {
+      console.error('Signout error:', error);
+      throw error;
+    }
   }
 }

@@ -2,7 +2,7 @@ import { AnimeProgress, HistoData, SavedProgress } from '../../../shared/types';
 import { LocalStore } from '../storage/localStore';
 
 export class SyncService {
-  private static readonly API_URL = 'https://votre-api.vercel.app';
+  private static readonly API_URL = 'http://localhost:3000/api/';
 
   static async mergeProgress(local: AnimeProgress, remote: AnimeProgress): Promise<AnimeProgress> {
     // Fusionner l'historique en gardant les entrées les plus récentes
