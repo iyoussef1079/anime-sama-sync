@@ -15,11 +15,13 @@ export class SyncController {
       const mergedProgress = await ProgressService.mergeUserProgress(userId, clientProgress);
       
       res.json({ success: true, data: mergedProgress });
+      next();
     } catch (error) {
       res.status(500).json({ 
         success: false, 
         error: error instanceof Error ? error.message : 'Internal server error'
       });
+      next();
     }
   }
 

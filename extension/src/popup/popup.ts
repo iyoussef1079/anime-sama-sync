@@ -1,5 +1,5 @@
 // extension/src/popup/popup.ts
-import { SyncMessage, SyncState, AnimeProgress } from '../types';
+import { SyncMessage, SyncState, AnimeProgress } from '../../../shared/types';
 import { LocalStore } from '../storage/localStore';
 
 class PopupManager {
@@ -36,7 +36,6 @@ class PopupManager {
         this.syncButton.addEventListener('click', () => this.handleSync());
         this.logoutButton.addEventListener('click', () => this.handleLogout());
 
-        // Écouter les messages du background script
         chrome.runtime.onMessage.addListener((message: SyncMessage) => {
             if (message.type === 'SYNC_STATE_CHANGED') {
                 this.updateSyncStatus(message.data);
@@ -47,12 +46,12 @@ class PopupManager {
 
     private async initializePopup() {
         try {
-            // Vérifier l'état de connexion
+            console.log('Initializing popup...');
             const user = await this.getCurrentUser();
+            console.log('Current user:', user);
             this.updateUIState(!!user);
 
             if (user) {
-                // Mettre à jour l'historique
                 await this.updateHistory();
             }
         } catch (error) {
@@ -70,19 +69,67 @@ class PopupManager {
     }
 
     private async handleLogin() {
+        console.log('Starting login process...');
         this.setButtonLoading(this.loginButton, true);
         try {
-            const response = await this.sendMessage({ type: 'LOGIN_REQUEST' });
-            if (response.success) {
-                this.updateUIState(true);
-                await this.updateHistory();
+            const token = await this.getAuthToken();
+            console.log('Auth token received:', !!token);
+
+            if (token) {
+                const userInfo = await this.fetchUserInfo(token);
+                console.log('User info received:', userInfo);
+
+                const response = await this.sendMessage({ 
+                    type: 'LOGIN_REQUEST',
+                    data: { token, userInfo }
+                });
+
+                if (response.success) {
+                    this.updateUIState(true);
+                    await this.updateHistory();
+                } else {
+                    throw new Error(response.error || 'Échec de la connexion');
+                }
             } else {
-                this.showError('Échec de la connexion');
+                throw new Error('Pas de token reçu');
             }
         } catch (error) {
-            this.showError('Erreur de connexion');
+            console.error('Login error:', error);
+            this.showError(error instanceof Error ? error.message : 'Erreur de connexion');
         } finally {
             this.setButtonLoading(this.loginButton, false);
+        }
+    }
+
+    private getAuthToken(): Promise<string | null> {
+        return new Promise((resolve) => {
+            chrome.identity.getAuthToken({ interactive: true }, function(token) {
+                if (chrome.runtime.lastError) {
+                    console.error('Auth Error:', chrome.runtime.lastError);
+                    resolve(null);
+                    return;
+                }
+                resolve(token || null);
+            });
+        });
+    }
+
+    private async fetchUserInfo(token: string) {
+        try {
+            const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch user info');
+            }
+
+            return response.json();
+        } catch (error) {
+            console.error('Error fetching user info:', error);
+            throw error;
         }
     }
 
@@ -96,6 +143,7 @@ class PopupManager {
                 this.showError(response.error || 'Échec de la synchronisation');
             }
         } catch (error) {
+            console.error('Sync error:', error);
             this.showError('Erreur de synchronisation');
         } finally {
             this.setButtonLoading(this.syncButton, false);
@@ -111,6 +159,7 @@ class PopupManager {
                 this.showError('Échec de la déconnexion');
             }
         } catch (error) {
+            console.error('Logout error:', error);
             this.showError('Erreur de déconnexion');
         }
     }
@@ -134,6 +183,7 @@ class PopupManager {
     }
 
     private updateUIState(isLoggedIn: boolean) {
+        console.log('Updating UI state:', isLoggedIn);
         this.loginContainer.style.display = isLoggedIn ? 'none' : 'block';
         this.syncContainer.style.display = isLoggedIn ? 'block' : 'none';
         this.connectionStatus.textContent = isLoggedIn ? '🟢' : '🔴';
@@ -162,7 +212,13 @@ class PopupManager {
     private setButtonLoading(button: HTMLButtonElement, loading: boolean) {
         button.disabled = loading;
         button.classList.toggle('disabled', loading);
-        button.textContent = loading ? 'Chargement...' : (button.textContent || '').replace('Chargement...', button.dataset.originalText || '');
+        const originalText = button.dataset.originalText || button.textContent || '';
+        if (loading) {
+            button.dataset.originalText = originalText;
+            button.textContent = 'Chargement...';
+        } else {
+            button.textContent = originalText;
+        }
     }
 
     private async sendMessage(message: SyncMessage): Promise<any> {
@@ -174,6 +230,7 @@ class PopupManager {
     }
 
     private showError(message: string) {
+        console.error('Error:', message);
         this.updateSyncStatus({
             lastSync: null,
             syncing: false,
@@ -182,7 +239,8 @@ class PopupManager {
     }
 }
 
-// Initialiser le popup
+// Initialize popup
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('DOM Content Loaded - Initializing PopupManager');
     new PopupManager();
 });

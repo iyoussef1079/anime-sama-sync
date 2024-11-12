@@ -1,4 +1,4 @@
-import { AnimeProgress, HistoData, SavedProgress } from '../types';
+import { AnimeProgress, HistoData, SavedProgress } from '../../../shared/types';
 
 export class LocalStore {
   public static readonly HISTO_KEYS: (keyof HistoData)[] = [

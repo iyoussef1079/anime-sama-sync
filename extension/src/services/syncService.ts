@@ -1,4 +1,4 @@
-import { AnimeProgress, HistoData, SavedProgress } from '../types';
+import { AnimeProgress, HistoData, SavedProgress } from '../../../shared/types';
 import { LocalStore } from '../storage/localStore';
 
 export class SyncService {
