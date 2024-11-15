@@ -1,246 +1,219 @@
-import { SyncMessage, SyncState, AnimeProgress } from '../../../shared/types';
-import { LocalStore } from '../storage/localStore';
+// extension/src/popup/popup.ts
 
-class PopupManager {
-    private statusContainer!: HTMLElement;
-    private loginContainer!: HTMLElement;
-    private syncContainer!: HTMLElement;
-    private historyContainer!: HTMLElement;
-    private lastAnimeContainer!: HTMLElement;
-    private loginButton!: HTMLButtonElement;
-    private syncButton!: HTMLButtonElement;
-    private logoutButton!: HTMLButtonElement;
-    private connectionStatus!: HTMLElement;
-
-    constructor() {
-        this.initializeElements();
-        this.setupEventListeners();
-        this.initializePopup();
-    }
-
-    private initializeElements() {
-        this.statusContainer = document.getElementById('statusContainer')!;
-        this.loginContainer = document.getElementById('loginContainer')!;
-        this.syncContainer = document.getElementById('syncContainer')!;
-        this.historyContainer = document.getElementById('historyContainer')!;
-        this.lastAnimeContainer = document.getElementById('lastAnime')!;
-        this.loginButton = document.getElementById('loginButton') as HTMLButtonElement;
-        this.syncButton = document.getElementById('syncButton') as HTMLButtonElement;
-        this.logoutButton = document.getElementById('logoutButton') as HTMLButtonElement;
-        this.connectionStatus = document.getElementById('connectionStatus')!;
-    }
-
-    private setupEventListeners() {
-        this.loginButton.addEventListener('click', () => this.handleLogin());
-        this.syncButton.addEventListener('click', () => this.handleSync());
-        this.logoutButton.addEventListener('click', () => this.handleLogout());
-
-        chrome.runtime.onMessage.addListener((message: SyncMessage) => {
-            if (message.type === 'SYNC_STATE_CHANGED') {
-                this.updateSyncStatus(message.data);
-            }
-            return true;
-        });
-    }
-
-    private async initializePopup() {
-        try {
-            console.log('Initializing popup...');
-            const user = await this.getCurrentUser();
-            console.log('Current user:', user);
-            this.updateUIState(!!user);
-
-            if (user) {
-                await this.updateHistory();
-            }
-        } catch (error) {
-            console.error('Popup initialization error:', error);
-            this.showError('Erreur d\'initialisation');
-        }
-    }
-
-    private async getCurrentUser(): Promise<any> {
-        return new Promise((resolve) => {
-            chrome.runtime.sendMessage({ type: 'GET_USER' }, (response) => {
-                resolve(response?.user || null);
-            });
-        });
-    }
-
-    private async handleLogin() {
-        console.log('Starting login process...');
-        this.setButtonLoading(this.loginButton, true);
-        try {
-            const token = await this.getAuthToken();
-            console.log('Auth token received:', !!token);
-
-            if (token) {
-                const userInfo = await this.fetchUserInfo(token);
-                console.log('User info received:', userInfo);
-
-                const response = await this.sendMessage({ 
-                    type: 'LOGIN_REQUEST',
-                    data: { token, userInfo }
-                });
-
-                if (response.success) {
-                    this.updateUIState(true);
-                    await this.updateHistory();
-                } else {
-                    throw new Error(response.error || 'Échec de la connexion');
-                }
-            } else {
-                throw new Error('Pas de token reçu');
-            }
-        } catch (error) {
-            console.error('Login error:', error);
-            this.showError(error instanceof Error ? error.message : 'Erreur de connexion');
-        } finally {
-            this.setButtonLoading(this.loginButton, false);
-        }
-    }
-
-    private getAuthToken(): Promise<string | null> {
-        return new Promise((resolve) => {
-            chrome.identity.getAuthToken({ interactive: true }, function(token) {
-                if (chrome.runtime.lastError) {
-                    console.error('Auth Error:', chrome.runtime.lastError);
-                    resolve(null);
-                    return;
-                }
-                console.log('Token reçu:', token);
-                resolve(token || null);
-            });
-        });
-    }
-
-    private async fetchUserInfo(token: string) {
-        try {
-            const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error('Failed to fetch user info');
-            }
-
-            return response.json();
-        } catch (error) {
-            console.error('Error fetching user info:', error);
-            throw error;
-        }
-    }
-
-    private async handleSync() {
-        this.setButtonLoading(this.syncButton, true);
-        try {
-            const response = await this.sendMessage({ type: 'SYNC_REQUEST' });
-            if (response.success) {
-                await this.updateHistory();
-            } else {
-                this.showError(response.error || 'Échec de la synchronisation');
-            }
-        } catch (error) {
-            console.error('Sync error:', error);
-            this.showError('Erreur de synchronisation');
-        } finally {
-            this.setButtonLoading(this.syncButton, false);
-        }
-    }
-
-    private async handleLogout() {
-        try {
-            const response = await this.sendMessage({ type: 'LOGOUT_REQUEST' });
-            if (response.success) {
-                this.updateUIState(false);
-            } else {
-                this.showError('Échec de la déconnexion');
-            }
-        } catch (error) {
-            console.error('Logout error:', error);
-            this.showError('Erreur de déconnexion');
-        }
-    }
-
-    private async updateHistory() {
-        try {
-            const progress = await LocalStore.getProgress();
-            if (progress.histo.histoNom.length > 0) {
-                const lastIndex = 0;
-                const html = `
-                    <strong>${progress.histo.histoNom[lastIndex]}</strong>
-                    <div>${progress.histo.histoType[lastIndex]}</div>
-                    <div>${progress.histo.histoEp[lastIndex]}</div>
-                `;
-                this.lastAnimeContainer.innerHTML = html;
-                this.historyContainer.style.display = 'block';
-            }
-        } catch (error) {
-            console.error('Error updating history:', error);
-        }
-    }
-
-    private updateUIState(isLoggedIn: boolean) {
-        console.log('Updating UI state:', isLoggedIn);
-        this.loginContainer.style.display = isLoggedIn ? 'none' : 'block';
-        this.syncContainer.style.display = isLoggedIn ? 'block' : 'none';
-        this.connectionStatus.textContent = isLoggedIn ? '🟢' : '🔴';
-    }
-
-    private updateSyncStatus(state: SyncState) {
-        let statusClass = 'status';
-        let message = '';
-
-        if (state.syncing) {
-            statusClass += ' syncing';
-            message = 'Synchronisation en cours...';
-        } else if (state.error) {
-            statusClass += ' error';
-            message = `Erreur: ${state.error}`;
-        } else if (state.lastSync) {
-            statusClass += ' success';
-            message = `Dernière sync: ${new Date(state.lastSync).toLocaleTimeString()}`;
-        }
-
-        if (message) {
-            this.statusContainer.innerHTML = `<div class="${statusClass}">${message}</div>`;
-        }
-    }
-
-    private setButtonLoading(button: HTMLButtonElement, loading: boolean) {
-        button.disabled = loading;
-        button.classList.toggle('disabled', loading);
-        const originalText = button.dataset.originalText || button.textContent || '';
-        if (loading) {
-            button.dataset.originalText = originalText;
-            button.textContent = 'Chargement...';
-        } else {
-            button.textContent = originalText;
-        }
-    }
-
-    private async sendMessage(message: SyncMessage): Promise<any> {
-        return new Promise((resolve) => {
-            chrome.runtime.sendMessage(message, (response) => {
-                resolve(response);
-            });
-        });
-    }
-
-    private showError(message: string) {
-        console.error('Error:', message);
-        this.updateSyncStatus({
-            lastSync: null,
-            syncing: false,
-            error: message
-        });
-    }
+interface PopupState {
+  isLoggedIn: boolean;
+  syncStatus: string;
+  lastAnime: {
+    name: string;
+    type: string;
+    episode: number;
+    image: string;
+  } | null;
+  error: string | null;
 }
 
-// Initialize popup
+class PopupManager {
+  private state: PopupState = {
+    isLoggedIn: false,
+    syncStatus: '',
+    lastAnime: null,
+    error: null
+  };
+
+  constructor() {
+    this.initialize();
+  }
+
+  private async initialize() {
+    console.log('Initializing popup...');
+    
+    // Mettre en place les écouteurs d'événements
+    this.setupEventListeners();
+    
+    // Récupérer l'état initial
+    await this.initializeState();
+  }
+
+  private setupEventListeners() {
+    // Écouter les messages du background script
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.type === 'SYNC_STATE_CHANGED') {
+        this.updateSyncStatus(message.data.syncing ? 'Synchronisation en cours...' : '');
+        if (message.data.error) {
+          this.showError(message.data.error);
+        }
+      }
+    });
+
+    // Bouton de connexion
+    document.getElementById('loginBtn')?.addEventListener('click', () => this.handleLogin());
+    
+    // Bouton de synchronisation
+    document.getElementById('syncBtn')?.addEventListener('click', () => this.handleSync());
+    
+    // Bouton de déconnexion
+    document.getElementById('logoutBtn')?.addEventListener('click', () => this.handleLogout());
+  }
+
+  private async initializeState() {
+    try {
+      // Récupérer l'état de l'utilisateur
+      const response = await this.sendMessage({ type: 'GET_USER' });
+      console.log('Current user:', response?.user);
+
+      // Mettre à jour l'état de connexion
+      this.updateLoginState(!!response?.user);
+
+      if (response?.user) {
+        await this.updateHistory();
+      }
+    } catch (error) {
+      console.error('Initialization error:', error);
+      this.showError("Erreur d'initialisation");
+    }
+  }
+
+  private async handleLogin() {
+    try {
+      const response = await this.sendMessage({ type: 'LOGIN_REQUEST' });
+      if (response?.success) {
+        this.updateLoginState(true);
+        await this.updateHistory();
+      } else {
+        this.showError(response?.error || 'Échec de la connexion');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      this.showError('Erreur de connexion');
+    }
+  }
+
+  private async handleSync() {
+    try {
+      this.updateSyncStatus('Synchronisation en cours...');
+      const response = await this.sendMessage({ type: 'SYNC_REQUEST' });
+      
+      if (response?.success) {
+        this.updateSyncStatus('Synchronisation terminée !');
+        setTimeout(() => this.updateSyncStatus(''), 3000);
+        await this.updateHistory();
+      } else {
+        this.showError(response?.error || 'Échec de la synchronisation');
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+      this.showError('Erreur de synchronisation');
+    }
+  }
+
+  private async handleLogout() {
+    try {
+      const response = await this.sendMessage({ type: 'LOGOUT_REQUEST' });
+      if (response?.success) {
+        this.updateLoginState(false);
+        this.state.lastAnime = null;
+        this.updateUI();
+      } else {
+        this.showError(response?.error || 'Échec de la déconnexion');
+      }
+    } catch (error) {
+      console.error('Logout error:', error);
+      this.showError('Erreur de déconnexion');
+    }
+  }
+
+  private async updateHistory() {
+    try {
+      const progress = await chrome.storage.local.get(null);
+      if (progress.histoNom?.length > 0) {
+        const lastIndex = 0; // Le plus récent
+        this.state.lastAnime = {
+          name: progress.histoNom[lastIndex] || 'Inconnu',
+          type: progress.histoType[lastIndex] || 'TV',
+          episode: parseInt(progress.histoEp[lastIndex]) || 0,
+          image: progress.histoImg[lastIndex] || '/placeholder.svg'
+        };
+        this.updateUI();
+      }
+    } catch (error) {
+      console.error('Error updating history:', error);
+    }
+  }
+
+  private async sendMessage(message: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve(response);
+        }
+      });
+    });
+  }
+
+  private updateLoginState(isLoggedIn: boolean) {
+    this.state.isLoggedIn = isLoggedIn;
+    this.updateUI();
+  }
+
+  private updateSyncStatus(status: string) {
+    this.state.syncStatus = status;
+    this.updateUI();
+  }
+
+  private showError(message: string) {
+    this.state.error = message;
+    this.updateUI();
+    setTimeout(() => {
+      this.state.error = null;
+      this.updateUI();
+    }, 5000);
+  }
+
+  private updateUI() {
+    // Mise à jour des éléments visibles selon l'état de connexion
+    const loggedOutSection = document.getElementById('loggedOutSection');
+    const loggedInSection = document.getElementById('loggedInSection');
+    const statusText = document.getElementById('statusText');
+    const errorText = document.getElementById('errorText');
+    const lastAnimeSection = document.getElementById('lastAnimeSection');
+
+    if (loggedOutSection && loggedInSection) {
+      loggedOutSection.style.display = this.state.isLoggedIn ? 'none' : 'block';
+      loggedInSection.style.display = this.state.isLoggedIn ? 'block' : 'none';
+    }
+
+    if (statusText) {
+      statusText.textContent = this.state.syncStatus;
+      statusText.style.display = this.state.syncStatus ? 'block' : 'none';
+    }
+
+    if (errorText) {
+      errorText.textContent = this.state.error || '';
+      errorText.style.display = this.state.error ? 'block' : 'none';
+    }
+
+    // Mise à jour de la section du dernier anime
+    if (lastAnimeSection && this.state.lastAnime) {
+      lastAnimeSection.innerHTML = `
+        <div class="last-anime">
+          <img src="${this.state.lastAnime.image}" alt="${this.state.lastAnime.name}" />
+          <div class="anime-info">
+            <h3>${this.state.lastAnime.name}</h3>
+            <p>${this.state.lastAnime.type} - Episode ${this.state.lastAnime.episode}</p>
+          </div>
+        </div>
+      `;
+      lastAnimeSection.style.display = 'block';
+    } else if (lastAnimeSection) {
+      lastAnimeSection.style.display = 'none';
+    }
+  }
+}
+
+// Initialiser le gestionnaire de popup quand le DOM est chargé
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM Content Loaded - Initializing PopupManager');
-    new PopupManager();
+  console.log('DOM Content Loaded - Initializing PopupManager');
+  new PopupManager();
 });

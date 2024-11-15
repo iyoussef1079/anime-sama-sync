@@ -1,4 +1,3 @@
-// extension/src/background/background.ts
 import { LocalStore } from '../storage/localStore';
 import { SyncMessage, SyncState } from '../../../shared/types';
 import { AuthService } from '../services/authService';
@@ -9,12 +8,11 @@ let syncInterval: NodeJS.Timeout | null = null;
 let lastSyncTime: number = 0;
 const DEBOUNCE_DELAY = 2000; // 2 secondes de debounce
 
-// État de la synchronisation pour éviter les syncs simultanées
 let isSyncing = false;
-
-// Surveille les changements dans le localStorage avec debounce
 let debounceTimeout: NodeJS.Timeout | null = null;
-chrome.storage.onChanged.addListener(async (changes, namespace) => {
+
+// Surveille les changements dans le localStorage
+chrome.storage.onChanged.addListener((changes, namespace) => {
   if (namespace === 'local') {
     const relevantChanges = Object.keys(changes).some(key =>
       key.startsWith('savedEpNb/') ||
@@ -31,29 +29,52 @@ chrome.storage.onChanged.addListener(async (changes, namespace) => {
   }
 });
 
-// Gestionnaire de messages de l'extension
+// Gestionnaire de messages de l'extension avec gestion d'erreur améliorée
 chrome.runtime.onMessage.addListener((message: SyncMessage, sender, sendResponse) => {
-  handleMessage(message).then(sendResponse).catch(error => {
-    console.error('Message handling error:', error);
-    sendResponse({ success: false, error: error.message });
-  });
-  return true; // Indique que la réponse sera envoyée de manière asynchrone
+  if (!message || !message.type) {
+    console.error('Invalid message format');
+    sendResponse({ success: false, error: 'Invalid message format' });
+    return true;
+  }
+
+  console.log('Received message:', message.type);
+
+  handleMessage(message)
+    .then(response => {
+      console.log('Sending response:', { success: true, ...response });
+      sendResponse({ success: true, ...response });
+    })
+    .catch(error => {
+      console.error('Message handling error:', error);
+      sendResponse({ success: false, error: error.message });
+    });
+
+  return true;
 });
 
 // Gestionnaire de messages
 async function handleMessage(message: SyncMessage): Promise<any> {
   try {
     switch (message.type) {
+      case 'GET_USER':
+        const user = await AuthService.getCurrentUser();
+        return { success: true, user };
+
       case 'SYNC_REQUEST':
         return await triggerSync(true);
+
       case 'LOGIN_REQUEST':
         return await handleLogin();
+
       case 'LOGOUT_REQUEST':
         return await handleLogout();
+
       case 'SYNC_STATE_CHANGED':
-        return await updateSyncState(message.data);
+        await updateSyncState(message.data);
+        return { success: true };
+
       default:
-        throw new Error('Unknown message type');
+        throw new Error(`Unknown message type: ${message.type}`);
     }
   } catch (error) {
     console.error(`Error handling message ${message.type}:`, error);
@@ -67,8 +88,7 @@ async function handleLogin(): Promise<{ success: boolean; error?: string }> {
     const user = await AuthService.signInWithGoogle();
     if (user) {
       startSyncInterval();
-      const syncResult = await triggerSync(true); // Synchronise immédiatement après la connexion
-      return syncResult;
+      return await triggerSync(true);
     }
     return { success: false, error: 'Login failed' };
   } catch (error) {
@@ -82,7 +102,6 @@ async function handleLogout(): Promise<{ success: boolean; error?: string }> {
   try {
     stopSyncInterval();
     await AuthService.signOut();
-    // Nettoyer l'état de synchronisation
     await updateSyncState({
       lastSync: null,
       syncing: false,
@@ -95,9 +114,8 @@ async function handleLogout(): Promise<{ success: boolean; error?: string }> {
   }
 }
 
-// Déclenche la synchronisation
+// Déclenche la synchronisation avec validation des données
 async function triggerSync(force: boolean = false): Promise<{ success: boolean; error?: string }> {
-  // Éviter les synchronisations simultanées
   if (isSyncing) {
     return { success: false, error: 'Sync already in progress' };
   }
@@ -122,9 +140,15 @@ async function triggerSync(force: boolean = false): Promise<{ success: boolean; 
       throw new Error('No valid token');
     }
 
+    // Récupération et validation des données
+    const localProgress = await LocalStore.getProgress();
+    console.log('Local progress:', localProgress);
+
     const serverProgress = await SyncService.syncWithServer(token);
-    if (serverProgress) {
-      const localProgress = await LocalStore.getProgress();
+    console.log('Server progress:', serverProgress);
+
+    // Fusion des données avec validation
+    if (serverProgress || localProgress) {
       const mergedProgress = await SyncService.mergeProgress(localProgress, serverProgress);
       await LocalStore.saveProgress(mergedProgress);
     }
@@ -132,7 +156,7 @@ async function triggerSync(force: boolean = false): Promise<{ success: boolean; 
     lastSyncTime = now;
     updateBadge('✓');
     setTimeout(() => updateBadge(''), 3000);
-    
+
     await updateSyncState({
       lastSync: new Date(),
       syncing: false,
@@ -143,16 +167,14 @@ async function triggerSync(force: boolean = false): Promise<{ success: boolean; 
   } catch (error) {
     console.error('Sync error:', error);
     updateBadge('!');
-    
+
+    const errorMessage = error instanceof Error ? error.message : 'Sync failed';
     await updateSyncState({
       syncing: false,
-      error: error instanceof Error ? error.message : 'Sync failed'
+      error: errorMessage
     });
 
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Sync failed'
-    };
+    return { success: false, error: errorMessage };
   } finally {
     isSyncing = false;
   }
@@ -160,10 +182,14 @@ async function triggerSync(force: boolean = false): Promise<{ success: boolean; 
 
 // Mise à jour de l'état de synchronisation
 async function updateSyncState(state: Partial<SyncState>): Promise<void> {
-  chrome.runtime.sendMessage({
-    type: 'SYNC_STATE_CHANGED',
-    data: state
-  });
+  try {
+    chrome.runtime.sendMessage({
+      type: 'SYNC_STATE_CHANGED',
+      data: state
+    });
+  } catch (error) {
+    console.error('Error updating sync state:', error);
+  }
 }
 
 // Démarre l'intervalle de synchronisation
@@ -194,6 +220,8 @@ function updateBadge(text: string) {
 async function initialize() {
   try {
     const user = await AuthService.getCurrentUser();
+    console.log('Initial user state:', user);
+
     if (user) {
       startSyncInterval();
       await triggerSync(true);
@@ -205,6 +233,13 @@ async function initialize() {
     });
   }
 }
+
+// Debug: Message
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('[Background] Message received:', message);
+  console.log('[Background] Sender:', sender);
+});
+
 
 // Lance l'initialisation
 initialize();

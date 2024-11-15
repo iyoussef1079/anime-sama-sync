@@ -1,71 +1,151 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anime-sama Sync</title>
-    <style>
-        body {
-            width: 300px;
-            padding: 16px;
-            font-family: system-ui, -apple-system, sans-serif;
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Anime-sama Sync</title>
+  <style>
+    body {
+      width: 350px;
+      min-height: 400px;
+      padding: 16px;
+      margin: 0;
+      font-family: system-ui, -apple-system, sans-serif;
+      background-color: #000;
+      color: white;
+    }
 
-        .container {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
+    .container {
+      background-color: #0a0a0a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 16px;
+    }
 
-        button {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 500;
-            transition: background-color 0.2s;
-        }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
 
-        .primary {
-            background-color: #1976d2;
-            color: white;
-        }
+    .title {
+      font-size: 24px;
+      font-weight: bold;
+      color: #00a6ff;
+      margin: 0;
+    }
 
-        .status {
-            padding: 8px;
-            border-radius: 4px;
-            margin-bottom: 12px;
-        }
+    .status-badge {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
 
-        .disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-    </style>
+    .status-badge.connected {
+      background-color: #22c55e;
+    }
+
+    .status-badge.disconnected {
+      background-color: #ef4444;
+    }
+
+    .button {
+      width: 100%;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+
+    .button-primary {
+      background-color: #00a6ff;
+      color: white;
+    }
+
+    .button-primary:hover {
+      background-color: #0082cc;
+    }
+
+    .button-outline {
+      background-color: transparent;
+      border: 1px solid #00a6ff;
+      color: #00a6ff;
+    }
+
+    .button-outline:hover {
+      background-color: #00a6ff;
+      color: white;
+    }
+
+    .status-text {
+      background-color: #111;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+
+    .error-text {
+      background-color: #ef4444;
+      color: white;
+      padding: 8px;
+      border-radius: 4px;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+
+    .last-anime {
+      display: flex;
+      gap: 16px;
+      background-color: #111;
+      padding: 16px;
+      border-radius: 4px;
+      margin-top: 16px;
+    }
+
+    .last-anime img {
+      width: 80px;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 4px;
+    }
+
+    .anime-info h3 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+    }
+
+    .anime-info p {
+      margin: 0;
+      color: #888;
+      font-size: 14px;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h2>Anime-sama Sync</h2>
-            <div id="connectionStatus"></div>
-        </div>
-
-        <div id="statusContainer"></div>
-
-        <div id="loginContainer">
-            <button id="loginButton" class="primary">Se connecter avec Google</button>
-        </div>
-
-        <div id="syncContainer" style="display: none;">
-            <button id="syncButton" class="primary">Synchroniser maintenant</button>
-            <button id="logoutButton">Se déconnecter</button>
-        </div>
-
-        <div id="historyContainer" style="display: none;">
-            <h3>Dernier anime vu</h3>
-            <div id="lastAnime"></div>
-        </div>
+  <div class="container">
+    <div class="header">
+      <h1 class="title">Anime-sama Sync</h1>
+      <div id="statusBadge" class="status-badge"></div>
     </div>
-    <script src="popup.js"></script>
+
+    <div id="errorText" class="error-text" style="display: none;"></div>
+    <div id="statusText" class="status-text" style="display: none;"></div>
+
+    <div id="loggedOutSection">
+      <button id="loginBtn" class="button button-primary">Se connecter avec Google</button>
+    </div>
+
+    <div id="loggedInSection" style="display: none;">
+      <button id="syncBtn" class="button button-primary">Synchroniser maintenant</button>
+      <button id="logoutBtn" class="button button-outline">Se déconnecter</button>
+      <div id="lastAnimeSection"></div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>

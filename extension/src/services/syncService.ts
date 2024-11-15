@@ -4,22 +4,26 @@ import { LocalStore } from '../storage/localStore';
 export class SyncService {
   private static readonly API_URL = 'http://localhost:3000/api/';
 
-  static async mergeProgress(local: AnimeProgress, remote: AnimeProgress): Promise<AnimeProgress> {
+  static async mergeProgress(local: AnimeProgress | null, remote: AnimeProgress | null): Promise<AnimeProgress> {
+    // Si l'une des sources est null, retourner l'autre
+    if (!local || !local.histo) return remote || this.getEmptyProgress();
+    if (!remote || !remote.histo) return local;
+
     // Fusionner l'historique en gardant les entrées les plus récentes
     const mergedHisto: HistoData = {
-      histoEp: [...new Set([...remote.histo.histoEp, ...local.histo.histoEp])].slice(0, 10),
-      histoImg: [...new Set([...remote.histo.histoImg, ...local.histo.histoImg])].slice(0, 10),
-      histoLang: [...new Set([...remote.histo.histoLang, ...local.histo.histoLang])].slice(0, 10),
-      histoNom: [...new Set([...remote.histo.histoNom, ...local.histo.histoNom])].slice(0, 10),
-      histoType: [...new Set([...remote.histo.histoType, ...local.histo.histoType])].slice(0, 10),
-      histoUrl: [...new Set([...remote.histo.histoUrl, ...local.histo.histoUrl])].slice(0, 10)
+      histoEp: [...new Set([...remote.histo.histoEp || [], ...local.histo.histoEp || []])].slice(0, 10),
+      histoImg: [...new Set([...remote.histo.histoImg || [], ...local.histo.histoImg || []])].slice(0, 10),
+      histoLang: [...new Set([...remote.histo.histoLang || [], ...local.histo.histoLang || []])].slice(0, 10),
+      histoNom: [...new Set([...remote.histo.histoNom || [], ...local.histo.histoNom || []])].slice(0, 10),
+      histoType: [...new Set([...remote.histo.histoType || [], ...local.histo.histoType || []])].slice(0, 10),
+      histoUrl: [...new Set([...remote.histo.histoUrl || [], ...local.histo.histoUrl || []])].slice(0, 10)
     };
 
     // Fusionner les sauvegardes d'épisodes
     const mergedSaved: SavedProgress = { ...remote.saved };
-    Object.entries(local.saved).forEach(([key, value]) => {
+    Object.entries(local.saved || {}).forEach(([key, value]) => {
       if (key.startsWith('savedEpNb/')) {
-        const remoteValue = Number(remote.saved[key]) || 0;
+        const remoteValue = Number(remote.saved?.[key]) || 0;
         const localValue = Number(value) || 0;
         if (localValue >= remoteValue) {
           mergedSaved[key] = localValue;
@@ -30,25 +34,49 @@ export class SyncService {
       }
     });
 
-    return { histo: mergedHisto, saved: mergedSaved };
+    return { 
+      histo: mergedHisto, 
+      saved: mergedSaved,
+      lastUpdate: Date.now()
+    };
   }
 
   static async syncWithServer(token: string): Promise<AnimeProgress | null> {
-    const localProgress = await LocalStore.getProgress();
-    
-    const response = await fetch(`${this.API_URL}/sync`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(localProgress)
-    });
+    try {
+      const localProgress = await LocalStore.getProgress();
+      
+      const response = await fetch(`${this.API_URL}sync`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(localProgress || this.getEmptyProgress())
+      });
 
-    if (!response.ok) {
-      throw new Error('Sync failed');
+      if (!response.ok) {
+        throw new Error('Sync failed');
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error('Sync error:', error);
+      return null;
     }
+  }
 
-    return response.json();
+  private static getEmptyProgress(): AnimeProgress {
+    return {
+      histo: {
+        histoEp: [],
+        histoImg: [],
+        histoLang: [],
+        histoNom: [],
+        histoType: [],
+        histoUrl: []
+      },
+      saved: {},
+      lastUpdate: Date.now()
+    };
   }
 }
