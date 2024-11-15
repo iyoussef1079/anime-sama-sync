@@ -1,0 +1,101 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  backend:
+    name: Backend Pipeline
+    runs-on: ubuntu-latest
+
+    env:
+      BACKEND_DIR: ./backend
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: ${{ env.BACKEND_DIR }}/package-lock.json
+
+      - name: Install Backend Dependencies
+        working-directory: ${{ env.BACKEND_DIR }}
+        run: npm ci
+
+      - name: Run Backend Tests
+        working-directory: ${{ env.BACKEND_DIR }}
+        run: npm test
+
+      - name: Build Backend
+        working-directory: ${{ env.BACKEND_DIR }}
+        run: npm run build
+
+      - name: Deploy to Vercel
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          npm install -g vercel
+          vercel deploy ${{ env.BACKEND_DIR }} --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+  extension:
+    name: Extension Pipeline
+    runs-on: ubuntu-latest
+
+    env:
+      EXTENSION_DIR: ./extension
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: ${{ env.EXTENSION_DIR }}/package-lock.json
+
+      - name: Install Extension Dependencies
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm ci
+
+      - name: Build Extension
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm run build
+
+      - name: Package Extension
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: |
+          zip -r extension.zip dist/*
+
+      - name: Upload Extension Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: chrome-extension
+          path: ${{ env.EXTENSION_DIR }}/extension.zip
+
+      - name: Deploy to Chrome Web Store
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+        run: |
+          ACCESS_TOKEN=$(curl -s -X POST -d "client_id=$CHROME_CLIENT_ID&client_secret=$CHROME_CLIENT_SECRET&refresh_token=$CHROME_REFRESH_TOKEN&grant_type=refresh_token" https://accounts.google.com/o/oauth2/token | jq -r .access_token)
+
+          # Upload package
+          curl -H "Authorization: Bearer $ACCESS_TOKEN" -H "x-goog-api-version: 2" -X PUT -T ${{ env.EXTENSION_DIR }}/extension.zip \
+            https://www.googleapis.com/upload/chromewebstore/v1.1/items/$CHROME_EXTENSION_ID
+
+          # Publish
+          curl -H "Authorization: Bearer $ACCESS_TOKEN" -H "x-goog-api-version: 2" -H "Content-Length: 0" -X POST \
+            https://www.googleapis.com/chromewebstore/v1.1/items/$CHROME_EXTENSION_ID/publish
