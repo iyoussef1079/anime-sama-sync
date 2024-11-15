@@ -1,39 +1,61 @@
 // backend/src/controllers/syncController.ts
-import { NextFunction, Request, Response } from 'express';
+import { Request, Response } from 'express';
 import { db } from '../config/firebase';
-import { AnimeProgress, HistoData } from '../../../shared/types';
+import { AnimeProgress, AnimeEntry } from '../../../shared/types';
 import { ProgressService } from '../services/progressService';
 
 export class SyncController {
   static async syncProgress(req: Request, res: Response) {
     try {
-      console.log('Sync request received');
+      console.log('=== Sync Request Details ===');
+      
       const userId = req.user?.uid;
-      console.log('User ID:', userId);
+      console.log('1. Processing for userId:', userId);
 
       if (!userId) {
-        console.log('No user ID found in request');
-        return res.status(401).json({ error: 'User not authenticated' });
+        console.log('Error: No user ID found');
+        return res.status(401).json({ 
+          success: false, 
+          error: 'User not authenticated' 
+        });
       }
 
       const clientProgress: AnimeProgress = req.body;
-      // Validation de base des données
-      if (!clientProgress || !clientProgress.histo || !clientProgress.saved) {
-        console.log('Invalid progress data received:', clientProgress);
+      
+      // Validate client progress structure
+      if (!this.validateProgressData(clientProgress)) {
+        console.log('Error: Invalid progress structure:', clientProgress);
         return res.status(400).json({ 
           success: false, 
           error: 'Invalid progress data format' 
         });
       }
       
-      console.log('Merging progress for user:', userId);
+      // Log incoming data
+      console.log('2. Client progress stats:', {
+        historyCount: clientProgress.histo.entries.length,
+        savedCount: Object.keys(clientProgress.saved).length,
+        animeNames: clientProgress.histo.entries.map(e => e.name),
+        lastUpdate: new Date(clientProgress.lastUpdate).toISOString()
+      });
+
+      // Merge progress
       const mergedProgress = await ProgressService.mergeUserProgress(userId, clientProgress);
-      console.log('Progress merged successfully');
       
+      // Log merged results
+      console.log('3. Merged progress stats:', {
+        historyCount: mergedProgress.histo.entries.length,
+        savedCount: Object.keys(mergedProgress.saved).length,
+        animeNames: mergedProgress.histo.entries.map(e => e.name),
+        lastUpdate: new Date(mergedProgress.lastUpdate).toISOString()
+      });
+
+      // Send response
       res.json({ 
         success: true, 
         data: mergedProgress 
       });
+      
     } catch (error) {
       console.error('Sync error:', error);
       res.status(500).json({ 
@@ -45,23 +67,27 @@ export class SyncController {
 
   static async getProgress(req: Request, res: Response) {
     try {
-      console.log('Get progress request received');
       const userId = req.user?.uid;
-      console.log('User ID:', userId);
+      console.log('Getting progress for user:', userId);
 
       if (!userId) {
-        console.log('No user ID found in request');
-        return res.status(401).json({ error: 'User not authenticated' });
+        return res.status(401).json({ 
+          success: false, 
+          error: 'User not authenticated' 
+        });
       }
 
-      console.log('Fetching progress for user:', userId);
       const progress = await ProgressService.getUserProgress(userId);
-      console.log('Progress fetched successfully');
+      console.log('Progress retrieved:', {
+        historyCount: progress.histo.entries.length,
+        savedCount: Object.keys(progress.saved).length
+      });
 
       res.json({ 
         success: true, 
         data: progress 
       });
+      
     } catch (error) {
       console.error('Get progress error:', error);
       res.status(500).json({
@@ -73,9 +99,8 @@ export class SyncController {
 
   static async testAuth(req: Request, res: Response) {
     try {
-      console.log('Test auth request received');
       const userId = req.user?.uid;
-      console.log('Auth test for user:', userId);
+      console.log('Testing auth for user:', userId);
 
       res.json({
         success: true,
@@ -83,6 +108,7 @@ export class SyncController {
         user: req.user,
         timestamp: new Date().toISOString()
       });
+      
     } catch (error) {
       console.error('Test auth error:', error);
       res.status(500).json({ 
@@ -90,5 +116,37 @@ export class SyncController {
         error: 'Authentication test failed' 
       });
     }
+  }
+
+  private static validateProgressData(progress: any): progress is AnimeProgress {
+    if (!progress || typeof progress !== 'object') return false;
+    
+    // Validate histo structure
+    if (!progress.histo || !Array.isArray(progress.histo.entries)) return false;
+    
+    // Validate each entry in the history
+    for (const entry of progress.histo.entries) {
+      if (!this.validateHistoryEntry(entry)) return false;
+    }
+    
+    // Validate saved structure
+    if (!progress.saved || typeof progress.saved !== 'object') return false;
+    
+    // Validate lastUpdate
+    if (typeof progress.lastUpdate !== 'number') return false;
+    
+    return true;
+  }
+
+  private static validateHistoryEntry(entry: any): entry is AnimeEntry {
+    return (
+      entry &&
+      typeof entry.url === 'string' &&
+      typeof entry.episode === 'string' &&
+      typeof entry.image === 'string' &&
+      typeof entry.language === 'string' &&
+      typeof entry.name === 'string' &&
+      typeof entry.type === 'string'
+    );
   }
 }

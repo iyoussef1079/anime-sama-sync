@@ -1,22 +1,33 @@
-// shared/types/index.ts
-
-export interface HistoData {
-  histoEp: string[];
-  histoImg: string[];
-  histoLang: string[];
-  histoNom: string[];
-  histoType: string[];
-  histoUrl: string[];
+// Represents a single anime entry in history
+export interface AnimeEntry {
+  url: string;      // Primary identifier
+  episode: string;  // Current episode
+  image: string;    // Image URL
+  language: string; // Language version (VO/VF)
+  name: string;     // Anime name
+  type: string;     // Season info
 }
 
+// Main history data structure
+export interface HistoData {
+  entries: AnimeEntry[];
+}
+
+// Represents a saved episode
+export interface SavedEpisode {
+  name: string;   // Episode name
+  number: number; // Episode number
+}
+
+// Saved progress with strongly typed structure
 export interface SavedProgress {
-  [key: string]: string | number;  // savedEpName/... ou savedEpNb/...
+  [animeUrl: string]: SavedEpisode;
 }
 
 export interface AnimeProgress {
   histo: HistoData;
   saved: SavedProgress;
-  lastUpdate?: number;
+  lastUpdate: number;
 }
 
 export interface SyncState {

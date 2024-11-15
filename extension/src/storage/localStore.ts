@@ -1,22 +1,13 @@
-import { AnimeProgress, HistoData, SavedProgress } from '../../../shared/types';
+import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../../../shared/types';
 
 export class LocalStore {
-  public static readonly HISTO_KEYS: (keyof HistoData)[] = [
-    'histoEp',
-    'histoImg',
-    'histoLang',
-    'histoNom',
-    'histoType',
-    'histoUrl'
-  ];
-
   // Récupère les données depuis le localStorage d'anime-sama.fr
   private static async getAnimeSamaData(): Promise<AnimeProgress> {
     try {
       const tabs = await chrome.tabs.query({ url: '*://*.anime-sama.fr/*' });
       if (tabs.length === 0) {
         console.warn('No anime-sama tabs found');
-        return { histo: this.getEmptyHisto(), saved: {} };
+        return this.createEmptyProgress();
       }
 
       // Exécuter du code dans le contexte de la page pour récupérer localStorage
@@ -37,63 +28,66 @@ export class LocalStore {
       const localData = result[0].result;
       console.log('Retrieved localStorage data:', localData);
 
-      // Construire l'objet histo
-      const histo: HistoData = {
-        histoEp: this.parseJsonSafely(localData['histoEp'], []),
-        histoImg: this.parseJsonSafely(localData['histoImg'], []),
-        histoLang: this.parseJsonSafely(localData['histoLang'], []),
-        histoNom: this.parseJsonSafely(localData['histoNom'], []),
-        histoType: this.parseJsonSafely(localData['histoType'], []),
-        histoUrl: this.parseJsonSafely(localData['histoUrl'], [])
-      };
+      // Parse the old format arrays
+      const histoEp = this.parseJsonSafely(localData['histoEp'], []);
+      const histoImg = this.parseJsonSafely(localData['histoImg'], []);
+      const histoLang = this.parseJsonSafely(localData['histoLang'], []);
+      const histoNom = this.parseJsonSafely(localData['histoNom'], []);
+      const histoType = this.parseJsonSafely(localData['histoType'], []);
+      const histoUrl = this.parseJsonSafely(localData['histoUrl'], []);
 
-      // Construire l'objet saved
+      // Convert to new entry format
+      const entries: AnimeEntry[] = histoUrl.map((url, index) => ({
+        url,
+        episode: histoEp[index] || 'Episode 1',
+        image: histoImg[index] || '',
+        language: histoLang[index] || 'VO',
+        name: histoNom[index] || '',
+        type: histoType[index] || 'Saison 1'
+      }));
+
+      // Process saved episodes
       const saved: SavedProgress = {};
-      Object.keys(localData).forEach(key => {
-        if (key.startsWith('savedEpName/') || key.startsWith('savedEpNb/')) {
-          saved[key] = localData[key];
+      Object.entries(localData).forEach(([key, value]) => {
+        if (key.startsWith('savedEpNb/')) {
+          const url = key.replace('savedEpNb/', '');
+          const nameKey = `savedEpName/${url}`;
+          saved[url] = {
+            number: Number(value) || 0,
+            name: localData[nameKey] || ''
+          };
         }
       });
 
-      return { histo, saved };
+      return {
+        histo: { entries },
+        saved,
+        lastUpdate: Date.now()
+      };
     } catch (error) {
       console.error('Error accessing localStorage:', error);
-      return { histo: this.getEmptyHisto(), saved: {} };
+      return this.createEmptyProgress();
     }
   }
 
-// Ajouter une méthode utilitaire pour parser le JSON en toute sécurité
-private static parseJsonSafely(jsonString: string | null, defaultValue: any[] = []): any[] {
-  if (!jsonString) return defaultValue;
-  try {
-    return JSON.parse(jsonString);
-  } catch (error) {
-    console.error('Error parsing JSON:', error);
-    return defaultValue;
+  private static parseJsonSafely(jsonString: string | null, defaultValue: string[] = []): string[] {
+    if (!jsonString) return defaultValue;
+    try {
+      const parsed = JSON.parse(jsonString);
+      return Array.isArray(parsed) ? parsed : defaultValue;
+    } catch (error) {
+      console.error('Error parsing JSON:', error);
+      return defaultValue;
+    }
   }
-}
 
   // Récupère les données depuis le storage de l'extension
-  private static getExtensionData(): Promise<AnimeProgress> {
+  private static async getExtensionData(): Promise<AnimeProgress> {
     return new Promise((resolve) => {
       chrome.storage.local.get(null, (items) => {
-        const histo: HistoData = {
-          histoEp: items.histoEp || [],
-          histoImg: items.histoImg || [],
-          histoLang: items.histoLang || [],
-          histoNom: items.histoNom || [],
-          histoType: items.histoType || [],
-          histoUrl: items.histoUrl || []
-        };
-
-        const saved: SavedProgress = {};
-        Object.keys(items).forEach(key => {
-          if (key.startsWith('savedEpName/') || key.startsWith('savedEpNb/')) {
-            saved[key] = items[key];
-          }
-        });
-
-        resolve({ histo, saved });
+        const progress = items.progress as AnimeProgress || this.createEmptyProgress();
+        console.log('Retrieved extension storage data:', progress);
+        resolve(progress);
       });
     });
   }
@@ -106,89 +100,118 @@ private static parseJsonSafely(jsonString: string | null, defaultValue: any[] = 
         this.getExtensionData()
       ]);
 
-      // Fusionner les historiques
-      const mergedHisto: HistoData = {
-        histoEp: [...new Set([...animeSamaData.histo.histoEp, ...extensionData.histo.histoEp])],
-        histoImg: [...new Set([...animeSamaData.histo.histoImg, ...extensionData.histo.histoImg])],
-        histoLang: [...new Set([...animeSamaData.histo.histoLang, ...extensionData.histo.histoLang])],
-        histoNom: [...new Set([...animeSamaData.histo.histoNom, ...extensionData.histo.histoNom])],
-        histoType: [...new Set([...animeSamaData.histo.histoType, ...extensionData.histo.histoType])],
-        histoUrl: [...new Set([...animeSamaData.histo.histoUrl, ...extensionData.histo.histoUrl])]
-      };
+      // Utiliser les données les plus récentes comme principales
+      const mainData = (animeSamaData?.lastUpdate ?? 0) > (extensionData?.lastUpdate ?? 0)
+        ? animeSamaData
+        : extensionData;
 
-      // Fusionner les données sauvegardées en prenant les plus récentes
-      const mergedSaved: SavedProgress = {
-        ...animeSamaData.saved,
-        ...extensionData.saved
-      };
+      const secondaryData = (animeSamaData?.lastUpdate ?? 0) > (extensionData?.lastUpdate ?? 0)
+        ? extensionData
+        : animeSamaData;
 
-      return { histo: mergedHisto, saved: mergedSaved };
+      // Create a map for merging entries
+      const entriesMap = new Map<string, AnimeEntry>();
+
+      // Add entries from both sources
+      [...mainData.histo.entries, ...secondaryData.histo.entries].forEach(entry => {
+        entriesMap.set(entry.url, entry);
+      });
+
+      // Convert map back to array and sort by most recent
+      const entries = Array.from(entriesMap.values())
+        .sort((a, b) => b.name.localeCompare(a.name))
+        .slice(0, 10);
+
+      // Merge saved progress
+      const saved: SavedProgress = { ...mainData.saved };
+      Object.entries(secondaryData.saved).forEach(([url, episode]) => {
+        if (!saved[url] || episode.number > saved[url].number) {
+          saved[url] = episode;
+        }
+      });
+
+      return {
+        histo: { entries },
+        saved,
+        lastUpdate: Date.now()
+      };
     } catch (error) {
       console.error('Error merging data:', error);
-      return { histo: this.getEmptyHisto(), saved: {} };
+      return this.createEmptyProgress();
     }
   }
 
-  // Sauvegarde les données dans le storage de l'extension ET dans anime-sama
   static async saveProgress(progress: AnimeProgress): Promise<void> {
     try {
-      // Sauvegarder dans le storage de l'extension
+      // Save to extension storage
       await new Promise<void>((resolve) => {
-        chrome.storage.local.set({
-          ...progress.histo,
-          ...progress.saved
-        }, resolve);
+        chrome.storage.local.set({ progress }, resolve);
       });
 
-      // Sauvegarder dans le localStorage d'anime-sama
+      // Save to anime-sama localStorage
       await this.saveToAnimeSama(progress);
-
     } catch (error) {
       console.error('Error saving progress:', error);
       throw error;
     }
   }
 
-  // Sauvegarde les données dans le localStorage d'anime-sama
   private static async saveToAnimeSama(progress: AnimeProgress): Promise<void> {
     try {
-        const tabs = await chrome.tabs.query({ url: '*://*.anime-sama.fr/*' });
-        if (tabs.length === 0) {
+      const tabs = await chrome.tabs.query({ url: '*://*.anime-sama.fr/*' });
+      if (tabs.length === 0) {
         console.log('No anime-sama tab found for saving');
-        return; // Retourne silencieusement si pas d'onglet
-        }
+        return;
+      }
 
-        // Utiliser executeScript pour sauvegarder
-        await chrome.scripting.executeScript({
+      // Convert new format to localStorage format
+      const saveData: Record<string, string> = {};
+
+      // Convert entries to arrays
+      const histoArrays = {
+        histoEp: progress.histo.entries.map(e => e.episode),
+        histoImg: progress.histo.entries.map(e => e.image),
+        histoLang: progress.histo.entries.map(e => e.language),
+        histoNom: progress.histo.entries.map(e => e.name),
+        histoType: progress.histo.entries.map(e => e.type),
+        histoUrl: progress.histo.entries.map(e => e.url),
+      };
+
+      // Convert arrays to JSON strings
+      Object.entries(histoArrays).forEach(([key, value]) => {
+        saveData[key] = JSON.stringify(value);
+      });
+
+      // Add saved episodes
+      Object.entries(progress.saved).forEach(([url, episode]) => {
+        saveData[`savedEpNb/${url}`] = String(episode.number);
+        saveData[`savedEpName/${url}`] = episode.name;
+      });
+
+      console.log('Saving to localStorage:', saveData);
+
+      await chrome.scripting.executeScript({
         target: { tabId: tabs[0].id! },
         func: (data) => {
-            // Sauvegarder chaque clé dans le localStorage
-            Object.entries(data).forEach(([key, value]) => {
-            if (typeof value === 'string') {
-                localStorage.setItem(key, value);
-            } else {
-                localStorage.setItem(key, JSON.stringify(value));
-            }
-            });
+          Object.entries(data).forEach(([key, value]) => {
+            localStorage.setItem(key, value);
+          });
         },
-        args: [{ ...progress.histo, ...progress.saved }]
-        });
+        args: [saveData]
+      });
 
-        console.log('Successfully saved to anime-sama localStorage');
+      console.log('Successfully saved to anime-sama localStorage');
     } catch (error) {
-        console.error('Error saving to anime-sama:', error);
-        throw new Error('Failed to save to anime-sama localStorage');
+      console.error('Error saving to anime-sama:', error);
+      throw new Error('Failed to save to anime-sama localStorage');
     }
   }
 
-  private static getEmptyHisto(): HistoData {
+  private static createEmptyProgress(): AnimeProgress {
     return {
-      histoEp: [],
-      histoImg: [],
-      histoLang: [],
-      histoNom: [],
-      histoType: [],
-      histoUrl: []
+      histo: { entries: [] },
+      saved: {},
+      lastUpdate: Date.now()
     };
   }
 }

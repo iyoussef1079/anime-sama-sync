@@ -1,41 +1,43 @@
-import { AnimeProgress, HistoData, SavedProgress } from '../../../shared/types';
+import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../../../shared/types';
 import { LocalStore } from '../storage/localStore';
 
 export class SyncService {
   private static readonly API_URL = 'http://localhost:3000/api/';
 
   static async mergeProgress(local: AnimeProgress | null, remote: AnimeProgress | null): Promise<AnimeProgress> {
-    // Si l'une des sources est null, retourner l'autre
+    // If either source is null, return the other
     if (!local || !local.histo) return remote || this.getEmptyProgress();
     if (!remote || !remote.histo) return local;
 
-    // Fusionner l'historique en gardant les entrées les plus récentes
-    const mergedHisto: HistoData = {
-      histoEp: [...new Set([...remote.histo.histoEp || [], ...local.histo.histoEp || []])].slice(0, 10),
-      histoImg: [...new Set([...remote.histo.histoImg || [], ...local.histo.histoImg || []])].slice(0, 10),
-      histoLang: [...new Set([...remote.histo.histoLang || [], ...local.histo.histoLang || []])].slice(0, 10),
-      histoNom: [...new Set([...remote.histo.histoNom || [], ...local.histo.histoNom || []])].slice(0, 10),
-      histoType: [...new Set([...remote.histo.histoType || [], ...local.histo.histoType || []])].slice(0, 10),
-      histoUrl: [...new Set([...remote.histo.histoUrl || [], ...local.histo.histoUrl || []])].slice(0, 10)
-    };
+    // Create a map of URLs to entries for easy merging
+    const entriesMap = new Map<string, AnimeEntry>();
 
-    // Fusionner les sauvegardes d'épisodes
+    // Add remote entries first
+    remote.histo.entries.forEach(entry => {
+      entriesMap.set(entry.url, entry);
+    });
+
+    // Add or update with local entries
+    local.histo.entries.forEach(entry => {
+      entriesMap.set(entry.url, entry);
+    });
+
+    // Convert map back to array
+    const mergedEntries = Array.from(entriesMap.values())
+      .sort((a, b) => b.name.localeCompare(a.name))  // Sort by name descending
+      .slice(0, 10);  // Keep only the 10 most recent
+
+    // Merge saved episodes
     const mergedSaved: SavedProgress = { ...remote.saved };
-    Object.entries(local.saved || {}).forEach(([key, value]) => {
-      if (key.startsWith('savedEpNb/')) {
-        const remoteValue = Number(remote.saved?.[key]) || 0;
-        const localValue = Number(value) || 0;
-        if (localValue >= remoteValue) {
-          mergedSaved[key] = localValue;
-          // Mettre à jour le nom d'épisode correspondant
-          const nameKey = key.replace('savedEpNb/', 'savedEpName/');
-          mergedSaved[nameKey] = local.saved[nameKey];
-        }
+    Object.entries(local.saved).forEach(([url, localEpisode]) => {
+      const remoteEpisode = remote.saved[url];
+      if (!remoteEpisode || localEpisode.number > remoteEpisode.number) {
+        mergedSaved[url] = localEpisode;
       }
     });
 
-    return { 
-      histo: mergedHisto, 
+    return {
+      histo: { entries: mergedEntries },
       saved: mergedSaved,
       lastUpdate: Date.now()
     };
@@ -44,21 +46,32 @@ export class SyncService {
   static async syncWithServer(token: string): Promise<AnimeProgress | null> {
     try {
       const localProgress = await LocalStore.getProgress();
-      
+      console.log('Local progress before sync:', {
+        entries: localProgress.histo.entries.length,
+        entriesData: localProgress.histo.entries,
+        saved: Object.keys(localProgress.saved).length
+      });
+
+      const body = JSON.stringify(localProgress || this.getEmptyProgress());
+      console.log('Data being sent to server:', body);
+
       const response = await fetch(`${this.API_URL}sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(localProgress || this.getEmptyProgress())
+        body
       });
 
       if (!response.ok) {
         throw new Error('Sync failed');
       }
 
-      return response.json();
+      const serverResponse = await response.json();
+      console.log('Raw server response:', serverResponse);
+
+      return serverResponse;
     } catch (error) {
       console.error('Sync error:', error);
       return null;
@@ -67,14 +80,7 @@ export class SyncService {
 
   private static getEmptyProgress(): AnimeProgress {
     return {
-      histo: {
-        histoEp: [],
-        histoImg: [],
-        histoLang: [],
-        histoNom: [],
-        histoType: [],
-        histoUrl: []
-      },
+      histo: { entries: [] },
       saved: {},
       lastUpdate: Date.now()
     };

@@ -123,6 +123,11 @@
       color: #888;
       font-size: 14px;
     }
+
+    .button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
   </style>
 </head>
 <body>
@@ -140,7 +145,7 @@
     </div>
 
     <div id="loggedInSection" style="display: none;">
-      <button id="syncBtn" class="button button-primary">Synchroniser maintenant</button>
+      <button id="syncBtn" class="button button-primary" disabled>Synchroniser maintenant</button>
       <button id="logoutBtn" class="button button-outline">Se déconnecter</button>
       <div id="lastAnimeSection"></div>
     </div>

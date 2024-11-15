@@ -1,94 +1,110 @@
 import { db } from '../config/firebase';
-import { AnimeProgress, HistoData } from '../../../shared/types';
+import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../../../shared/types';
 
 export class ProgressService {
   static async getUserProgress(userId: string): Promise<AnimeProgress> {
-    const userDoc = await db.collection('users').doc(userId).get();
-    
-    if (!userDoc.exists) {
-      return { 
-        histo: this.createEmptyHisto(), 
-        saved: {} 
-      };
+    try {
+      const userDoc = await db.collection('progress').doc(userId).get();
+      
+      if (!userDoc.exists) {
+        return { 
+          histo: { entries: [] }, 
+          saved: {},
+          lastUpdate: Date.now()
+        };
+      }
+
+      return userDoc.data() as AnimeProgress;
+    } catch (error) {
+      console.error('Error getting user progress:', error);
+      throw error;
     }
-
-    return (userDoc.data() as { progress: AnimeProgress }).progress;
   }
 
-  static async mergeUserProgress(
-    userId: string, 
-    clientProgress: AnimeProgress
-  ): Promise<AnimeProgress> {
-    const userDoc = await db.collection('users').doc(userId).get();
-    const serverProgress = userDoc.exists ? 
-      (userDoc.data() as { progress: AnimeProgress }).progress : 
-      { histo: this.createEmptyHisto(), saved: {} };
+  static async mergeUserProgress(userId: string, clientProgress: AnimeProgress): Promise<AnimeProgress> {
+    try {
+      console.log('=== ProgressService: mergeUserProgress ===');
+      console.log('1. Starting merge for user:', userId);
+      
+      // Get existing progress from Firestore
+      const userDoc = await db.collection('progress').doc(userId).get();
+      const serverProgress = userDoc.exists ? userDoc.data() as AnimeProgress : null;
+      
+      console.log('2. Existing server data:', serverProgress ? {
+        entriesCount: serverProgress.histo.entries.length,
+        savedCount: Object.keys(serverProgress.saved).length
+      } : 'No existing data');
 
-    const mergedProgress = this.mergeProgress(serverProgress, clientProgress);
+      // If no server progress, use client progress directly
+      if (!serverProgress) {
+        console.log('3. No server progress - using client progress');
+        await db.collection('progress').doc(userId).set(clientProgress);
+        return clientProgress;
+      }
 
-    await db.collection('users').doc(userId).set({
-      progress: mergedProgress,
-      lastSync: new Date().toISOString()
-    });
+      console.log('3. Merging with server progress');
+      
+      // Create a map for easy lookup and merging
+      const entriesMap = new Map<string, AnimeEntry>();
+      
+      // Add server entries first
+      serverProgress.histo.entries.forEach(entry => {
+        entriesMap.set(entry.url, entry);
+      });
+      
+      // Add or update with client entries
+      clientProgress.histo.entries.forEach(entry => {
+        entriesMap.set(entry.url, entry);
+      });
+      
+      // Create merged progress
+      const mergedProgress: AnimeProgress = {
+        histo: {
+          entries: Array.from(entriesMap.values())
+            .sort((a, b) => b.name.localeCompare(a.name))
+            .slice(0, 10)
+        },
+        saved: this.mergeSavedProgress(serverProgress.saved, clientProgress.saved),
+        lastUpdate: Date.now()
+      };
 
-    return mergedProgress;
-  }
-
-  private static createEmptyHisto(): HistoData {
-    return {
-      histoEp: [],
-      histoImg: [],
-      histoLang: [],
-      histoNom: [],
-      histoType: [],
-      histoUrl: []
-    };
-  }
-
-  private static mergeProgress(
-    serverProgress: AnimeProgress,
-    clientProgress: AnimeProgress
-  ): AnimeProgress {
-    return {
-      histo: this.mergeHistoData(serverProgress.histo, clientProgress.histo),
-      saved: this.mergeSavedProgress(serverProgress.saved, clientProgress.saved),
-      lastUpdate: Date.now()
-    };
-  }
-
-  private static mergeHistoData(server: HistoData, client: HistoData): HistoData {
-    const mergeArrays = (a: string[], b: string[]) => 
-      Array.from(new Set([...b, ...a])).slice(0, 10);
-
-    return {
-      histoEp: mergeArrays(server.histoEp, client.histoEp),
-      histoImg: mergeArrays(server.histoImg, client.histoImg),
-      histoLang: mergeArrays(server.histoLang, client.histoLang),
-      histoNom: mergeArrays(server.histoNom, client.histoNom),
-      histoType: mergeArrays(server.histoType, client.histoType),
-      histoUrl: mergeArrays(server.histoUrl, client.histoUrl)
-    };
+      console.log('4. Merged progress:', {
+        entriesCount: mergedProgress.histo.entries.length,
+        savedCount: Object.keys(mergedProgress.saved).length
+      });
+      
+      // Save to Firestore
+      await db.collection('progress').doc(userId).set(mergedProgress);
+      console.log('5. Saved to Firestore successfully');
+      
+      return mergedProgress;
+    } catch (error) {
+      console.error('Error in mergeUserProgress:', error);
+      throw error;
+    }
   }
 
   private static mergeSavedProgress(
-    server: Record<string, any>, 
-    client: Record<string, any>
-  ): Record<string, any> {
-    const merged = { ...server };
+    serverSaved: SavedProgress, 
+    clientSaved: SavedProgress
+  ): SavedProgress {
+    const mergedSaved: SavedProgress = { ...serverSaved };
     
-    Object.entries(client).forEach(([key, value]) => {
-      if (key.startsWith('savedEpNb/')) {
-        const localValue = Number(value) || 0;
-        const remoteValue = Number(server[key]) || 0;
-        
-        if (localValue >= remoteValue) {
-          merged[key] = localValue;
-          const nameKey = key.replace('savedEpNb/', 'savedEpName/');
-          merged[nameKey] = client[nameKey];
-        }
+    Object.entries(clientSaved).forEach(([url, clientEpisode]) => {
+      const serverEpisode = serverSaved[url];
+      if (!serverEpisode || clientEpisode.number > serverEpisode.number) {
+        mergedSaved[url] = clientEpisode;
       }
     });
 
-    return merged;
+    return mergedSaved;
+  }
+
+  private static createEmptyProgress(): AnimeProgress {
+    return {
+      histo: { entries: [] },
+      saved: {},
+      lastUpdate: Date.now()
+    };
   }
 }

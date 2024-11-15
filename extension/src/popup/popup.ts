@@ -1,15 +1,12 @@
 // extension/src/popup/popup.ts
+import { AnimeProgress, AnimeEntry } from '../../../shared/types';
 
 interface PopupState {
   isLoggedIn: boolean;
   syncStatus: string;
-  lastAnime: {
-    name: string;
-    type: string;
-    episode: number;
-    image: string;
-  } | null;
+  lastAnime: AnimeEntry | null;
   error: string | null;
+  syncInProgress: boolean;
 }
 
 class PopupManager {
@@ -17,7 +14,8 @@ class PopupManager {
     isLoggedIn: false,
     syncStatus: '',
     lastAnime: null,
-    error: null
+    error: null,
+    syncInProgress: false
   };
 
   constructor() {
@@ -38,30 +36,38 @@ class PopupManager {
     // Écouter les messages du background script
     chrome.runtime.onMessage.addListener((message) => {
       if (message.type === 'SYNC_STATE_CHANGED') {
-        this.updateSyncStatus(message.data.syncing ? 'Synchronisation en cours...' : '');
-        if (message.data.error) {
-          this.showError(message.data.error);
-        }
+        this.handleSyncStateChange(message.data);
       }
     });
 
-    // Bouton de connexion
+    // Event listeners for buttons
+    this.setupButtonListeners();
+  }
+
+  private setupButtonListeners() {
     document.getElementById('loginBtn')?.addEventListener('click', () => this.handleLogin());
-    
-    // Bouton de synchronisation
     document.getElementById('syncBtn')?.addEventListener('click', () => this.handleSync());
-    
-    // Bouton de déconnexion
     document.getElementById('logoutBtn')?.addEventListener('click', () => this.handleLogout());
+  }
+
+  private handleSyncStateChange(data: { syncing: boolean; error?: string }) {
+    this.state.syncInProgress = data.syncing;
+    this.updateSyncStatus(data.syncing ? 'Synchronisation en cours...' : '');
+    
+    if (data.error) {
+      this.showError(data.error);
+    }
+
+    if (!data.syncing && !data.error) {
+      this.updateHistory();
+    }
   }
 
   private async initializeState() {
     try {
-      // Récupérer l'état de l'utilisateur
       const response = await this.sendMessage({ type: 'GET_USER' });
       console.log('Current user:', response?.user);
 
-      // Mettre à jour l'état de connexion
       this.updateLoginState(!!response?.user);
 
       if (response?.user) {
@@ -74,8 +80,12 @@ class PopupManager {
   }
 
   private async handleLogin() {
+    if (this.state.syncInProgress) return;
+
     try {
+      this.updateSyncStatus('Connexion en cours...');
       const response = await this.sendMessage({ type: 'LOGIN_REQUEST' });
+      
       if (response?.success) {
         this.updateLoginState(true);
         await this.updateHistory();
@@ -85,12 +95,19 @@ class PopupManager {
     } catch (error) {
       console.error('Login error:', error);
       this.showError('Erreur de connexion');
+    } finally {
+      this.updateSyncStatus('');
     }
   }
 
   private async handleSync() {
+    if (this.state.syncInProgress) return;
+
     try {
+      this.state.syncInProgress = true;
       this.updateSyncStatus('Synchronisation en cours...');
+      this.updateUI(); // Update UI to show sync in progress
+
       const response = await this.sendMessage({ type: 'SYNC_REQUEST' });
       
       if (response?.success) {
@@ -103,10 +120,15 @@ class PopupManager {
     } catch (error) {
       console.error('Sync error:', error);
       this.showError('Erreur de synchronisation');
+    } finally {
+      this.state.syncInProgress = false;
+      this.updateUI();
     }
   }
 
   private async handleLogout() {
+    if (this.state.syncInProgress) return;
+
     try {
       const response = await this.sendMessage({ type: 'LOGOUT_REQUEST' });
       if (response?.success) {
@@ -124,19 +146,16 @@ class PopupManager {
 
   private async updateHistory() {
     try {
-      const progress = await chrome.storage.local.get(null);
-      if (progress.histoNom?.length > 0) {
-        const lastIndex = 0; // Le plus récent
-        this.state.lastAnime = {
-          name: progress.histoNom[lastIndex] || 'Inconnu',
-          type: progress.histoType[lastIndex] || 'TV',
-          episode: parseInt(progress.histoEp[lastIndex]) || 0,
-          image: progress.histoImg[lastIndex] || '/placeholder.svg'
-        };
+      const storage = await chrome.storage.local.get('progress');
+      const progress = storage.progress as AnimeProgress;
+      
+      if (progress?.histo?.entries?.length > 0) {
+        this.state.lastAnime = progress.histo.entries[0];
         this.updateUI();
       }
     } catch (error) {
       console.error('Error updating history:', error);
+      this.showError('Erreur lors de la mise à jour de l\'historique');
     }
   }
 
@@ -172,36 +191,57 @@ class PopupManager {
   }
 
   private updateUI() {
-    // Mise à jour des éléments visibles selon l'état de connexion
+    this.updateVisibility();
+    this.updateStatusBadge();
+    this.updateStatusText();
+    this.updateErrorText();
+    this.updateLastAnime();
+    this.updateButtons();
+  }
+
+  private updateVisibility() {
     const loggedOutSection = document.getElementById('loggedOutSection');
     const loggedInSection = document.getElementById('loggedInSection');
-    const statusText = document.getElementById('statusText');
-    const errorText = document.getElementById('errorText');
-    const lastAnimeSection = document.getElementById('lastAnimeSection');
 
     if (loggedOutSection && loggedInSection) {
       loggedOutSection.style.display = this.state.isLoggedIn ? 'none' : 'block';
       loggedInSection.style.display = this.state.isLoggedIn ? 'block' : 'none';
     }
+  }
 
+  private updateStatusBadge() {
+    const statusBadge = document.getElementById('statusBadge');
+    if (statusBadge) {
+      statusBadge.textContent = this.state.isLoggedIn ? 'Connecté' : 'Déconnecté';
+      statusBadge.className = `status-badge ${this.state.isLoggedIn ? 'connected' : 'disconnected'}`;
+    }
+  }
+
+  private updateStatusText() {
+    const statusText = document.getElementById('statusText');
     if (statusText) {
       statusText.textContent = this.state.syncStatus;
       statusText.style.display = this.state.syncStatus ? 'block' : 'none';
     }
+  }
 
+  private updateErrorText() {
+    const errorText = document.getElementById('errorText');
     if (errorText) {
       errorText.textContent = this.state.error || '';
       errorText.style.display = this.state.error ? 'block' : 'none';
     }
+  }
 
-    // Mise à jour de la section du dernier anime
+  private updateLastAnime() {
+    const lastAnimeSection = document.getElementById('lastAnimeSection');
     if (lastAnimeSection && this.state.lastAnime) {
       lastAnimeSection.innerHTML = `
         <div class="last-anime">
           <img src="${this.state.lastAnime.image}" alt="${this.state.lastAnime.name}" />
           <div class="anime-info">
             <h3>${this.state.lastAnime.name}</h3>
-            <p>${this.state.lastAnime.type} - Episode ${this.state.lastAnime.episode}</p>
+            <p>${this.state.lastAnime.type} - ${this.state.lastAnime.episode}</p>
           </div>
         </div>
       `;
@@ -210,9 +250,28 @@ class PopupManager {
       lastAnimeSection.style.display = 'none';
     }
   }
+
+  private updateButtons() {
+    const syncBtn = document.getElementById('syncBtn') as HTMLButtonElement;
+    const loginBtn = document.getElementById('loginBtn') as HTMLButtonElement;
+    const logoutBtn = document.getElementById('logoutBtn') as HTMLButtonElement;
+
+    if (syncBtn) {
+      syncBtn.disabled = this.state.syncInProgress;
+      syncBtn.textContent = this.state.syncInProgress ? 'Synchronisation...' : 'Synchroniser maintenant';
+    }
+
+    if (loginBtn) {
+      loginBtn.disabled = this.state.syncInProgress;
+    }
+
+    if (logoutBtn) {
+      logoutBtn.disabled = this.state.syncInProgress;
+    }
+  }
 }
 
-// Initialiser le gestionnaire de popup quand le DOM est chargé
+// Initialize the popup manager when the DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
   console.log('DOM Content Loaded - Initializing PopupManager');
   new PopupManager();
