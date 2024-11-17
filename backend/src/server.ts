@@ -1,8 +1,8 @@
-// backend/src/server.ts
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { syncRouter } from './routes/sync';
+import healthRouter from './routes/health';
 import { authMiddleware } from './middleware/auth';
 
 dotenv.config();
@@ -21,8 +21,12 @@ app.use(cors({
 }));
 
 app.use(express.json());
-app.use(authMiddleware);
-app.use('/api', syncRouter);
+
+// Public routes (no auth required)
+app.use('/health', healthRouter);
+
+// Protected routes (auth required)
+app.use('/api', authMiddleware, syncRouter);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
