@@ -1,39 +1,39 @@
-name: Health Check Monitoring
+# name: Health Check Monitoring
 
-on:
-  schedule:
-    - cron: '*/5 * * * *'  # Runs every 15 minutes
-  workflow_dispatch:  # Allows manual triggering
+# on:
+#   schedule:
+#     - cron: '*/5 * * * *'  # Runs every 15 minutes
+#   workflow_dispatch:  # Allows manual triggering
 
-jobs:
-  health-check:
-    runs-on: ubuntu-latest
+# jobs:
+#   health-check:
+#     runs-on: ubuntu-latest
     
-    steps:
-    - name: Check API Health
-      uses: jtalk/url-health-check-action@v3
-      with:
-        url: ${{ secrets.API_URL }}/health
-        max-attempts: 3
-        retry-delay: 5s
-        retry-all: true
+#     steps:
+#     - name: Check API Health
+#       uses: jtalk/url-health-check-action@v3
+#       with:
+#         url: ${{ secrets.API_URL }}/health
+#         max-attempts: 3
+#         retry-delay: 5s
+#         retry-all: true
 
-    - name: Notify on Failure
-      if: failure()
-      uses: actions/github-script@v6
-      with:
-        script: |
-          const issue = await github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: '🚨 API Health Check Failed',
-            body: `Health check failed at ${new Date().toISOString()}\nPlease check the [monitoring logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
-          });
+#     - name: Notify on Failure
+#       if: failure()
+#       uses: actions/github-script@v6
+#       with:
+#         script: |
+#           const issue = await github.rest.issues.create({
+#             owner: context.repo.owner,
+#             repo: context.repo.repo,
+#             title: '🚨 API Health Check Failed',
+#             body: `Health check failed at ${new Date().toISOString()}\nPlease check the [monitoring logs](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`
+#           });
 
-          // Optional: Add labels, assign people, etc.
-          await github.rest.issues.addLabels({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: issue.data.number,
-            labels: ['incident', 'high-priority']
-          });
+#           // Optional: Add labels, assign people, etc.
+#           await github.rest.issues.addLabels({
+#             owner: context.repo.owner,
+#             repo: context.repo.repo,
+#             issue_number: issue.data.number,
+#             labels: ['incident', 'high-priority']
+#           });
