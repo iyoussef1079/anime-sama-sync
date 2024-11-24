@@ -2,7 +2,7 @@ import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../types';
 import { LocalStore } from '../storage/localStore';
 
 export class SyncService {
-  private static readonly API_URL = 'http://localhost:3000/api/';
+  private static readonly API_URL = process.env.NODE_ENV === 'development'  ? 'http://localhost:3000/api/': 'https://anime-sama-sync-iszecoxgd-iyoussef1079s-projects.vercel.app/';
 
   static async mergeProgress(local: AnimeProgress | null, remote: AnimeProgress | null): Promise<AnimeProgress> {
     // If either source is null, return the other
