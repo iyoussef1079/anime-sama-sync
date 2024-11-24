@@ -1,5 +1,5 @@
 import { db } from '../config/firebase';
-import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../../../shared/types';
+import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../types';
 
 export class ProgressService {
   static async getUserProgress(userId: string): Promise<AnimeProgress> {

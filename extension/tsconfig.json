@@ -10,7 +10,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "outDir": "./dist",
-    "rootDir": "../",
+    "rootDir": "./",
     "types": ["chrome", "node"]
   },
   "include": ["src/**/*"],

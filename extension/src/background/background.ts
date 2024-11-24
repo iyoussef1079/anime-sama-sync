@@ -1,5 +1,5 @@
 import { LocalStore } from '../storage/localStore';
-import { SyncMessage, SyncState } from '../../../shared/types';
+import { SyncMessage, SyncState } from '../types';
 import { AuthService } from '../services/authService';
 import { SyncService } from '../services/syncService';
 
