@@ -1,5 +1,5 @@
 // extension/src/popup/popup.ts
-import { AnimeProgress, AnimeEntry } from '../../../shared/types';
+import { AnimeProgress, AnimeEntry } from '../types';
 
 interface PopupState {
   isLoggedIn: boolean;

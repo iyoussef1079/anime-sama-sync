@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { getAuth } from 'firebase-admin/auth';
-import { UserAuth } from '../../../shared/types';
+import { UserAuth } from '../types';
 
 declare global {
   namespace Express {

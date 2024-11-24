@@ -1,7 +1,7 @@
 // backend/src/controllers/syncController.ts
 import { Request, Response } from 'express';
 import { db } from '../config/firebase';
-import { AnimeProgress, AnimeEntry } from '../../../shared/types';
+import { AnimeProgress, AnimeEntry } from '../types';
 import { ProgressService } from '../services/progressService';
 
 export class SyncController {

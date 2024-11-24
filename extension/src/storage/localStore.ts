@@ -1,4 +1,4 @@
-import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../../../shared/types';
+import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../types';
 
 export class LocalStore {
   // Récupère les données depuis le localStorage d'anime-sama.fr
