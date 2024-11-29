@@ -1,5 +1,6 @@
 import { AnimeProgress, HistoData, SavedProgress, AnimeEntry } from '../types';
 import { LocalStore } from '../storage/localStore';
+import { AuthService } from './authService';
 
 export class SyncService {
   private static readonly API_URL = process.env.NODE_ENV === 'development'  ? 'http://localhost:3000/api/': 'https://anime-sama-sync-iszecoxgd-iyoussef1079s-projects.vercel.app/';
@@ -24,7 +25,7 @@ export class SyncService {
 
     // Convert map back to array
     const mergedEntries = Array.from(entriesMap.values())
-      .sort((a, b) => b.name.localeCompare(a.name))  // Sort by name descending
+      .sort((a, b) => b.name.localeCompare(a.name))
       .slice(0, 10);  // Keep only the 10 most recent
 
     // Merge saved episodes
@@ -52,17 +53,24 @@ export class SyncService {
         saved: Object.keys(localProgress.saved).length
       });
 
-      const body = JSON.stringify(localProgress || this.getEmptyProgress());
-      console.log('Data being sent to server:', body);
-
       const response = await fetch(`${this.API_URL}sync`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body
+        body: JSON.stringify(localProgress || this.getEmptyProgress())
       });
+
+      if (response.status === 401) {
+        // Token might be expired, trigger re-authentication
+        await AuthService.signInWithGoogle();
+        const newToken = await AuthService.getIdToken();
+        if (newToken) {
+          return this.syncWithServer(newToken);
+        }
+        throw new Error('Failed to refresh authentication');
+      }
 
       if (!response.ok) {
         throw new Error('Sync failed');

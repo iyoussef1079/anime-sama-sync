@@ -6,10 +6,6 @@ const router = Router();
 
 router.use(authMiddleware);
 
-router.get('/test', async (req: Request, res: Response) => {
-  res.json({ message: 'API working', user: req.user });
-});
-
 router.post('/sync', async (req: Request, res: Response) => {
   await SyncController.syncProgress(req, res);
 });
