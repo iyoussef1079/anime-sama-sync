@@ -14,13 +14,23 @@
     "type": "module"
   },
   "host_permissions": [
-    "https://anime-sama.fr/*/*"
+    "*://*.anime-sama.fr/*",
+    "*://*.anime-sama.fr/*/*",
+    "*://*.anime-sama.fr/*/*/*"
   ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
     }
   },
+  "content_scripts": [{
+    "matches": [
+      "*://*.anime-sama.fr/*",
+      "*://*.anime-sama.fr/*/*",
+      "*://*.anime-sama.fr/*/*/*"
+    ],
+    "js": ["content.js"]
+  }],
   "icons": {
   },
   "oauth2": {
