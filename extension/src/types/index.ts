@@ -1,3 +1,5 @@
+// extension/src/types/index.ts
+
 // Represents a single anime entry in history
 export interface AnimeEntry {
   url: string;      // Primary identifier
@@ -6,6 +8,7 @@ export interface AnimeEntry {
   language: string; // Language version (VO/VF)
   name: string;     // Anime name
   type: string;     // Season info
+  lastWatched: number;
 }
 
 // Main history data structure

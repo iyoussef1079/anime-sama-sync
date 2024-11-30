@@ -15,6 +15,7 @@ export interface AnimeEntry {
   language: string; // Language version (VO/VF)
   name: string;     // Anime name
   type: string;     // Season info
+  lastWatched: number;
 }
 
 // Main history data structure
@@ -51,10 +52,10 @@ export interface UserAuth {
   email_verified?: boolean;
 }
 
-export type SyncMessageType = 
-  | 'SYNC_REQUEST' 
-  | 'LOGIN_REQUEST' 
-  | 'LOGOUT_REQUEST' 
+export type SyncMessageType =
+  | 'SYNC_REQUEST'
+  | 'LOGIN_REQUEST'
+  | 'LOGOUT_REQUEST'
   | 'SYNC_STATE_CHANGED'
   | 'GET_USER';
 
@@ -67,4 +68,12 @@ export interface ApiResponse {
   success: boolean;
   error?: string;
   data?: any;
+}
+
+export interface GooglePayload {
+  email: string;
+  email_verified?: boolean;
+  name?: string;
+  picture?: string;
+  sub: string;
 }

@@ -80,25 +80,34 @@ class PopupManager {
   }
 
   private async handleLogin() {
-    if (this.state.syncInProgress) return;
+  if (this.state.syncInProgress) return;
 
-    try {
-      this.updateSyncStatus('Connexion en cours...');
-      const response = await this.sendMessage({ type: 'LOGIN_REQUEST' });
+  try {
+    this.updateSyncStatus('Connexion en cours...');
+    const response = await this.sendMessage({ type: 'LOGIN_REQUEST' });
+    
+    if (response?.success) {
+      // Update login state immediately when auth succeeds
+      this.updateLoginState(true);
+      this.updateUI();
       
-      if (response?.success) {
-        this.updateLoginState(true);
+      // Try to update history, but don't block on it
+      try {
         await this.updateHistory();
-      } else {
-        this.showError(response?.error || 'Échec de la connexion');
+      } catch (error) {
+        console.error('History update failed:', error);
+        this.showError('Erreur de synchronisation. Réessayez plus tard.');
       }
-    } catch (error) {
-      console.error('Login error:', error);
-      this.showError('Erreur de connexion');
-    } finally {
-      this.updateSyncStatus('');
+    } else {
+      this.showError(response?.error || 'Échec de la connexion');
     }
+  } catch (error) {
+    console.error('Login error:', error);
+    this.showError('Erreur de connexion');
+  } finally {
+    this.updateSyncStatus('');
   }
+}
 
   private async handleSync() {
     if (this.state.syncInProgress) return;
@@ -150,7 +159,7 @@ class PopupManager {
       const progress = storage.progress as AnimeProgress;
       
       if (progress?.histo?.entries?.length > 0) {
-        this.state.lastAnime = progress.histo.entries[0];
+        this.state.lastAnime = progress.histo.entries[progress?.histo?.entries?.length - 1];
         this.updateUI();
       }
     } catch (error) {

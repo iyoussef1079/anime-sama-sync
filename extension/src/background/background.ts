@@ -88,7 +88,19 @@ async function handleLogin(): Promise<{ success: boolean; error?: string }> {
     const user = await AuthService.signInWithGoogle();
     if (user) {
       startSyncInterval();
-      return await triggerSync(true);
+      
+      // First send success response for login
+      const loginResponse = { success: true, user };
+      
+      // Then try to sync, but don't let sync failure affect login status
+      try {
+        await triggerSync(true);
+      } catch (error) {
+        console.error('Initial sync failed after login:', error);
+        // Don't return the error, we're already logged in successfully
+      }
+      
+      return loginResponse;
     }
     return { success: false, error: 'Login failed' };
   } catch (error) {
