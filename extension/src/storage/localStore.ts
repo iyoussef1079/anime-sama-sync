@@ -114,6 +114,21 @@ export class LocalStore {
   }
 
   private static processAnimeData(localData: Record<string, string>): AnimeProgress {
+    const saved: SavedProgress = {};
+    const savedEpisodes = new Map<string, string>();
+
+    Object.entries(localData).forEach(([key, value]) => {
+      if (key.startsWith('savedEpNb/')) {
+        const url = key.replace('savedEpNb/', '');
+        const nameKey = `savedEpName/${url}`;
+        saved[url] = {
+          number: Number(value) || 0,
+          name: localData[nameKey] || ''
+        };
+        savedEpisodes.set(url, localData[nameKey] || '');
+      }
+    });
+
     const histoEp = this.parseJsonSafely(localData['histoEp'], []);
     const histoImg = this.parseJsonSafely(localData['histoImg'], []);
     const histoLang = this.parseJsonSafely(localData['histoLang'], []);
@@ -123,31 +138,20 @@ export class LocalStore {
 
     const entries = histoUrl.map((url, index) => ({
       url,
-      episode: histoEp[index] || 'Episode 1',
+      episode: savedEpisodes.get(url) || histoEp[index] || 'Episode 1',
       image: histoImg[index] || '',
       language: histoLang[index] || 'VO',
       name: histoNom[index] || '',
-      type: histoType[index] || 'Saison 1'
+      type: histoType[index] || 'Saison 1',
+      lastWatched: Date.now()
     }));
-
-    const saved: SavedProgress = {};
-    Object.entries(localData).forEach(([key, value]) => {
-      if (key.startsWith('savedEpNb/')) {
-        const url = key.replace('savedEpNb/', '');
-        const nameKey = `savedEpName/${url}`;
-        saved[url] = {
-          number: Number(value) || 0,
-          name: localData[nameKey] || ''
-        };
-      }
-    });
 
     return {
       histo: { entries },
       saved,
       lastUpdate: Date.now()
     };
-  }
+}
 
   private static async saveToAnimeSama(progress: AnimeProgress): Promise<void> {
     try {
@@ -169,27 +173,32 @@ export class LocalStore {
   }
 
   private static prepareSaveData(progress: AnimeProgress): Record<string, string> {
-    const histoArrays = {
-      histoEp: progress.histo.entries.map(e => e.episode),
-      histoImg: progress.histo.entries.map(e => e.image),
-      histoLang: progress.histo.entries.map(e => e.language),
-      histoNom: progress.histo.entries.map(e => e.name),
-      histoType: progress.histo.entries.map(e => e.type),
-      histoUrl: progress.histo.entries.map(e => e.url),
+    const histoArrays: Record<string, string[]> = {
+        histoEp: progress.histo.entries.map(entry => {
+            const savedEp = progress.saved[entry.url];
+            return savedEp ? savedEp.name : entry.episode;
+        }),
+        histoImg: progress.histo.entries.map(e => e.image),
+        histoLang: progress.histo.entries.map(e => e.language),
+        histoNom: progress.histo.entries.map(e => e.name),
+        histoType: progress.histo.entries.map(e => e.type),
+        histoUrl: progress.histo.entries.map(e => e.url),
     };
 
     const saveData: Record<string, string> = {};
+
     Object.entries(histoArrays).forEach(([key, value]) => {
-      saveData[key] = JSON.stringify(value);
+        saveData[key] = JSON.stringify(value);
     });
 
+    // Save episode progress
     Object.entries(progress.saved).forEach(([url, episode]) => {
-      saveData[`savedEpNb/${url}`] = String(episode.number);
-      saveData[`savedEpName/${url}`] = episode.name;
+        saveData[`savedEpNb/${url}`] = String(episode.number);
+        saveData[`savedEpName/${url}`] = episode.name;
     });
 
     return saveData;
-  }
+}
 
   private static parseJsonSafely(jsonString: string | null, defaultValue: string[] = []): string[] {
     if (!jsonString) return defaultValue;

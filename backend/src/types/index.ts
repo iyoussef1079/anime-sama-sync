@@ -15,6 +15,7 @@ export interface AnimeEntry {
   language: string; // Language version (VO/VF)
   name: string;     // Anime name
   type: string;     // Season info
+  lastWatched: number;
 }
 
 // Main history data structure
