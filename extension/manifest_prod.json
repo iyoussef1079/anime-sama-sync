@@ -34,7 +34,7 @@
   "icons": {
   },
   "oauth2": {
-    "client_id": "837579805766-qombmckcesjgde7trfc4aj0nr9iqhk4j.apps.googleusercontent.com",
+    "client_id": "580264936242-h78j6sjbh21fanoi9dt7fmhje9tnr9jd.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/userinfo.email",
       "https://www.googleapis.com/auth/userinfo.profile"

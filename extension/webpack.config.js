@@ -2,7 +2,7 @@ const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
 
 module.exports = {
-    mode: 'development', // Pour avoir des logs détaillés
+    mode: 'production', // Pour avoir des logs détaillés
     devtool: 'cheap-module-source-map', // Pour un meilleur debugging
     entry: {
         background: './src/background/background.ts',
@@ -30,9 +30,13 @@ module.exports = {
         new CopyPlugin({
             patterns: [
                 {
-                    from: "manifest.json",
+                    from: "manifest_prod.json",
                     to: "manifest.json"
                 },
+                // {
+                //     from: "manifest.json",
+                //     to: "manifest.json"
+                // },
                 {
                     from: "src/popup/popup.html",
                     to: "popup.html"

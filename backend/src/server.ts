@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { syncRouter } from './routes/sync';
+import authRouter from './routes/auth';
 import healthRouter from './routes/health';
 import { authMiddleware } from './middleware/auth';
 
@@ -24,6 +25,7 @@ app.use(express.json());
 
 // Public routes (no auth required)
 app.use('/health', healthRouter);
+app.use('/auth', authRouter);
 
 // Protected routes (auth required)
 app.use('/api', authMiddleware, syncRouter);
