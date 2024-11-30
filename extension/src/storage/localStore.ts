@@ -99,7 +99,15 @@ export class LocalStore {
           if (!response?.success) continue;
 
           const localData = response.data;
-          return this.processAnimeData(localData);
+          const progress = this.processAnimeData(localData);
+
+          progress.histo.entries = progress.histo.entries.map(entry => ({
+            ...entry,
+            episode: progress.saved[entry.url]?.name || entry.episode
+          }));
+
+          return progress;
+
         } catch (error) {
           console.error('Error with tab:', tab.url, error);
           continue;
@@ -115,20 +123,21 @@ export class LocalStore {
 
   private static processAnimeData(localData: Record<string, string>): AnimeProgress {
     const saved: SavedProgress = {};
-    const savedEpisodes = new Map<string, string>();
-
     Object.entries(localData).forEach(([key, value]) => {
       if (key.startsWith('savedEpNb/')) {
-        const url = key.replace('savedEpNb/', '');
-        const nameKey = `savedEpName/${url}`;
+        // Ensure URL starts with '/' for consistency
+        let url = key.replace('savedEpNb/', '');
+        url = url.startsWith('/') ? url : '/' + url;
+        
+        const nameKey = `savedEpName/${url.replace(/^\//, '')}`; // Remove leading slash for lookup
         saved[url] = {
           number: Number(value) || 0,
-          name: localData[nameKey] || ''
+          name: this.cleanEpisodeName(localData[nameKey] || '')
         };
-        savedEpisodes.set(url, localData[nameKey] || '');
       }
     });
 
+    // Process history arrays with consistent URL format
     const histoEp = this.parseJsonSafely(localData['histoEp'], []);
     const histoImg = this.parseJsonSafely(localData['histoImg'], []);
     const histoLang = this.parseJsonSafely(localData['histoLang'], []);
@@ -136,20 +145,26 @@ export class LocalStore {
     const histoType = this.parseJsonSafely(localData['histoType'], []);
     const histoUrl = this.parseJsonSafely(localData['histoUrl'], []);
 
-    const entries = histoUrl.map((url, index) => ({
-      url,
-      episode: savedEpisodes.get(url) || histoEp[index] || 'Episode 1',
-      image: histoImg[index] || '',
-      language: histoLang[index] || 'VO',
-      name: histoNom[index] || '',
-      type: histoType[index] || 'Saison 1',
-      lastWatched: Date.now()
-    }));
+    // Create entries using saved episode data when available
+    const entries = histoUrl.map((url, index) => {
+        // Ensure URL starts with '/'
+        const normalizedUrl = url.startsWith('/') ? url : '/' + url;
+        return {
+            url: normalizedUrl,
+            // Use saved episode if available
+            episode: saved[normalizedUrl]?.name || histoEp[index] || 'Episode 1',
+            image: histoImg[index] || '',
+            language: histoLang[index] || 'VO',
+            name: histoNom[index] || '',
+            type: histoType[index] || 'Saison 1',
+            lastWatched: Date.now()
+        };
+    });
 
     return {
-      histo: { entries },
-      saved,
-      lastUpdate: Date.now()
+        histo: { entries },
+        saved,
+        lastUpdate: Date.now()
     };
 }
 
@@ -157,6 +172,15 @@ export class LocalStore {
     try {
       const tabId = await this.ensureAnimesamaTab();
       const saveData = this.prepareSaveData(progress);
+
+      // Verify data before sending
+      console.log('Verifying save data:', {
+          histoEp: JSON.parse(saveData.histoEp),
+          saved: Object.fromEntries(
+              Object.entries(saveData)
+                  .filter(([key]) => key.startsWith('savedEpName/'))
+          )
+      });
 
       const response = await this.sendMessageToTab(tabId, {
         type: 'SET_LOCAL_STORAGE',
@@ -166,38 +190,57 @@ export class LocalStore {
       if (!response?.success) {
         throw new Error(response?.error || 'Failed to save to localStorage');
       }
+
+      // Verify storage after save
+      const verifyResponse = await this.sendMessageToTab(tabId, {
+          type: 'GET_LOCAL_STORAGE'
+      });
+
+      console.log('Storage after save:', {
+          histoEp: JSON.parse(verifyResponse.data.histoEp),
+          saved: Object.fromEntries(
+              Object.entries(verifyResponse.data)
+                  .filter(([key]) => key.startsWith('savedEpName/'))
+          )
+      });
+
     } catch (error) {
       console.error('Error saving to anime-sama:', error);
       throw new Error('Failed to save to anime-sama localStorage');
     }
-  }
+}
 
   private static prepareSaveData(progress: AnimeProgress): Record<string, string> {
-    const histoArrays: Record<string, string[]> = {
-        histoEp: progress.histo.entries.map(entry => {
-            const savedEp = progress.saved[entry.url];
-            return savedEp ? savedEp.name : entry.episode;
-        }),
-        histoImg: progress.histo.entries.map(e => e.image),
-        histoLang: progress.histo.entries.map(e => e.language),
-        histoNom: progress.histo.entries.map(e => e.name),
-        histoType: progress.histo.entries.map(e => e.type),
-        histoUrl: progress.histo.entries.map(e => e.url),
+    // First, ensure histoEp matches savedEp for each entry
+    const updatedEntries = progress.histo.entries.map(entry => ({
+        ...entry,
+        episode: progress.saved[entry.url]?.name || entry.episode
+    }));
+
+    // Create arrays in the website's custom format
+    const saveData: Record<string, string> = {
+        histoEp: `[${updatedEntries.map(e => `"${this.cleanEpisodeName(e.episode)}"`)}]`,
+        histoImg: `[${updatedEntries.map(e => `"${e.image}"`)}]`,
+        histoLang: `[${updatedEntries.map(e => `"${e.language}"`)}]`,
+        histoNom: `[${updatedEntries.map(e => `"${e.name}"`)}]`,
+        histoType: `[${updatedEntries.map(e => `"${e.type}"`)}]`,
+        histoUrl: `[${updatedEntries.map(e => `"${e.url}"`)}]`
     };
 
-    const saveData: Record<string, string> = {};
-
-    Object.entries(histoArrays).forEach(([key, value]) => {
-        saveData[key] = JSON.stringify(value);
-    });
-
-    // Save episode progress
+    // Save episode progress without JSON.stringify
     Object.entries(progress.saved).forEach(([url, episode]) => {
-        saveData[`savedEpNb/${url}`] = String(episode.number);
-        saveData[`savedEpName/${url}`] = episode.name;
+        const storageUrl = url.replace(/^\//, '');
+        saveData[`savedEpNb/${storageUrl}`] = String(episode.number);
+        saveData[`savedEpName/${storageUrl}`] = episode.name;  // No quotes here
     });
 
     return saveData;
+}
+
+// Helper to clean episode names
+private static cleanEpisodeName(name: string): string {
+    // Remove any surrounding quotes
+    return name.replace(/^["']|["']$/g, '');
 }
 
   private static parseJsonSafely(jsonString: string | null, defaultValue: string[] = []): string[] {

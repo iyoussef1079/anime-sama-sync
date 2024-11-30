@@ -36,16 +36,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   else if (message.type === 'SET_LOCAL_STORAGE') {
     try {
-      // Set localStorage items
-      Object.entries(message.data).forEach(([key, value]) => {
-        localStorage.setItem(key, value as string);
-      });
+        // Add logging
+        console.log('Content script received data:', message.data);
+        
+        // Log current localStorage state
+        console.log('Current localStorage:', {
+            histoEp: localStorage.getItem('histoEp'),
+            savedEpName: Object.keys(localStorage)
+                .filter(key => key.startsWith('savedEpName'))
+                .reduce((acc, key) => ({
+                    ...acc,
+                    [key]: localStorage.getItem(key)
+                }), {})
+        });
 
-      console.log('[Anime-Sama Sync] Successfully set localStorage items');
-      sendResponse({ success: true });
+        // Set localStorage items
+        Object.entries(message.data).forEach(([key, value]) => {
+            console.log(`Setting ${key}:`, value);
+            localStorage.setItem(key, value as string);
+        });
+
+        // Verify after setting
+        console.log('localStorage after update:', {
+            histoEp: localStorage.getItem('histoEp'),
+            savedEpName: Object.keys(localStorage)
+                .filter(key => key.startsWith('savedEpName'))
+                .reduce((acc, key) => ({
+                    ...acc,
+                    [key]: localStorage.getItem(key)
+                }), {})
+        });
+
+        sendResponse({ success: true });
     } catch (error) {
-      console.error('Error setting localStorage:', error);
-      sendResponse({ success: false, error: String(error) });
+        console.error('Error setting localStorage:', error);
+        sendResponse({ success: false, error: String(error) });
     }
   } else {
       console.log('[Anime-Sama Sync] Unknown message type:', message.type);
