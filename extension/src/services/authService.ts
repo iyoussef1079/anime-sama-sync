@@ -1,6 +1,8 @@
 // extension/src/services/authService.ts
 import {
   signInWithCustomToken,
+} from 'firebase/auth/web-extension';
+import {
   User
 } from 'firebase/auth';
 import { auth } from '../config/firebase';
@@ -41,7 +43,7 @@ export class AuthService {
       }
 
       const authData = await response.json();
-      
+
       if (!authData.customToken) {
         throw new Error('No custom token received');
       }

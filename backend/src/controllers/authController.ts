@@ -8,7 +8,7 @@ const oauth2Client = new OAuth2Client({
   clientId: process.env.GOOGLE_CLIENT_ID
 });
 
-export const authenticateWithGoogle = async (req: Request, res: Response) => {
+export const authenticateWithGoogle = async (req: Request, res: Response): Promise<any> => {
   try {
     const { token } = req.body;
 
@@ -61,7 +61,7 @@ export const authenticateWithGoogle = async (req: Request, res: Response) => {
   }
 };
 
-export const verifyToken = async (req: Request, res: Response) => {
+export const verifyToken = async (req: Request, res: Response): Promise<any>  => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader) {

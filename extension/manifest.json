@@ -18,9 +18,10 @@
     "*://*.anime-sama.fr/*/*/*"
   ],
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-    }
+    "default_popup": "popup.html"
+  },
+  "icons": {
+      "128": "icons/icon128.png"
   },
   "content_scripts": [{
     "matches": [
@@ -30,8 +31,6 @@
     ],
     "js": ["content.js"]
   }],
-  "icons": {
-  },
   "oauth2": {
     "client_id": "837579805766-qombmckcesjgde7trfc4aj0nr9iqhk4j.apps.googleusercontent.com",
     "scopes": [

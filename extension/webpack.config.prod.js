@@ -1,9 +1,9 @@
 const path = require('path');
 const CopyPlugin = require('copy-webpack-plugin');
+const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 
 module.exports = {
     mode: 'production', // Pour avoir des logs détaillés
-    devtool: 'cheap-module-source-map', // Pour un meilleur debugging
     entry: {
         background: './src/background/background.ts',
         popup: './src/popup/popup.ts',
@@ -40,9 +40,14 @@ module.exports = {
                 {
                     from: "public/icons",
                     to: "icons",
-                    noErrorOnMissing: true
                 }
             ]
-        })
-    ]
+        }),
+        // new BundleAnalyzerPlugin()
+    ],
+    optimization: {
+        usedExports: true,
+        sideEffects: true,
+        minimize: true
+    }
 };

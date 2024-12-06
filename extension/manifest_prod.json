@@ -31,6 +31,7 @@
     "js": ["content.js"]
   }],
   "icons": {
+      "128": "icons/icon128.png"
   },
   "oauth2": {
     "client_id": "580264936242-h78j6sjbh21fanoi9dt7fmhje9tnr9jd.apps.googleusercontent.com",

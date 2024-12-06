@@ -84,7 +84,8 @@ export class LocalStore {
   }
 }
 
-  private static async getAnimeSamaData(): Promise<AnimeProgress> {
+  // 1. First reading data
+private static async getAnimeSamaData(): Promise<AnimeProgress> {
     try {
       const tabs = await chrome.tabs.query({ url: '*://*.anime-sama.fr/*' });
       if (tabs.length === 0) {
@@ -92,79 +93,104 @@ export class LocalStore {
         return this.createEmptyProgress();
       }
 
-      // Try each tab until we get a response
+      // Add debug logging
+      console.log('Getting anime-sama data from tabs:', tabs);
+
       for (const tab of tabs) {
         try {
           const response = await this.sendMessageToTab(tab.id!, { type: 'GET_LOCAL_STORAGE' });
+          console.log('Raw localStorage response:', response?.data);
+          
           if (!response?.success) continue;
 
           const localData = response.data;
           const progress = this.processAnimeData(localData);
-
-          progress.histo.entries = progress.histo.entries.map(entry => ({
-            ...entry,
-            episode: progress.saved[entry.url]?.name || entry.episode
-          }));
-
+          
+          console.log('Processed anime data:', progress);
           return progress;
-
         } catch (error) {
           console.error('Error with tab:', tab.url, error);
           continue;
         }
       }
-
       return this.createEmptyProgress();
     } catch (error) {
       console.error('Error accessing localStorage:', error);
       return this.createEmptyProgress();
     }
-  }
+}
 
-  private static processAnimeData(localData: Record<string, string>): AnimeProgress {
+// 2. Processing the data
+private static processAnimeData(localData: Record<string, string>): AnimeProgress {
+    console.log('Processing raw data:', localData);
+    
+    // Extract saved data first
     const saved: SavedProgress = {};
     Object.entries(localData).forEach(([key, value]) => {
       if (key.startsWith('savedEpNb/')) {
-        // Ensure URL starts with '/' for consistency
-        let url = key.replace('savedEpNb/', '');
-        url = url.startsWith('/') ? url : '/' + url;
+        const url = key.replace('savedEpNb/', '');
+        let normalizedUrl = url.startsWith('/') ? url : '/' + url;
+        const nameKey = `savedEpName/${url}`;
+
+        const cleanedEpisodeName = localData[nameKey]?.replace(/['"]+/g, '') || ''
+
         
-        const nameKey = `savedEpName/${url.replace(/^\//, '')}`; // Remove leading slash for lookup
-        saved[url] = {
+        console.log(`Processing saved data for ${normalizedUrl}:`, {
+          number: value,
+          name: cleanedEpisodeName
+        });
+
+        
+        saved[normalizedUrl] = {
           number: Number(value) || 0,
-          name: this.cleanEpisodeName(localData[nameKey] || '')
+          name: cleanedEpisodeName
         };
       }
     });
 
-    // Process history arrays with consistent URL format
-    const histoEp = this.parseJsonSafely(localData['histoEp'], []);
-    const histoImg = this.parseJsonSafely(localData['histoImg'], []);
-    const histoLang = this.parseJsonSafely(localData['histoLang'], []);
-    const histoNom = this.parseJsonSafely(localData['histoNom'], []);
-    const histoType = this.parseJsonSafely(localData['histoType'], []);
-    const histoUrl = this.parseJsonSafely(localData['histoUrl'], []);
+    // Parse history arrays with website's format in mind
+    const parseArray = (str: string): string[] => {
+      console.log('Parsing array string:', str);
+      if (!str) return [];
+      // Remove quotes and brackets and split
+      const cleaned = str.replace(/^\[|\]$/g, '')
+        .split(',')
+        .map(item => item.trim().replace(/['"]+/g, '')); // Remove all quotes
+      console.log('Parsed array:', cleaned);
+      return cleaned;
+    };
 
-    // Create entries using saved episode data when available
+    const histoEp = parseArray(localData['histoEp'] || '');
+    const histoUrl = parseArray(localData['histoUrl'] || '');
+    const histoImg = parseArray(localData['histoImg'] || '');
+    const histoLang = parseArray(localData['histoLang'] || '');
+    const histoNom = parseArray(localData['histoNom'] || '');
+    const histoType = parseArray(localData['histoType'] || '');
+
+    console.log('Parsed arrays:', {
+      histoEp, histoUrl, histoLang, histoNom, histoType
+    });
+
+    // Create entries using saved episode names
     const entries = histoUrl.map((url, index) => {
-        // Ensure URL starts with '/'
-        const normalizedUrl = url.startsWith('/') ? url : '/' + url;
-        return {
-            url: normalizedUrl,
-            // Use saved episode if available
-            episode: saved[normalizedUrl]?.name || histoEp[index] || 'Episode 1',
-            image: histoImg[index] || '',
-            language: histoLang[index] || 'VO',
-            name: histoNom[index] || '',
-            type: histoType[index] || 'Saison 1',
-            lastWatched: Date.now()
-        };
+      const normalizedUrl = url.startsWith('/') ? url : '/' + url;
+      const entry = {
+        url: normalizedUrl,
+        episode: (saved[normalizedUrl]?.name || histoEp[index] || 'Episode 1').replace(/['"]+/g, ''),
+        image: histoImg[index] || '',
+        language: histoLang[index] || 'VO',
+        name: histoNom[index] || '',
+        type: histoType[index] || 'Saison 1',
+        lastWatched: Date.now()
+      };
+      console.log(`Created entry for ${normalizedUrl}:`, entry);
+      return entry;
     });
 
     return {
-        histo: { entries },
-        saved,
-        lastUpdate: Date.now()
+      histo: { entries },
+      saved,
+      lastUpdate: Date.now()
     };
 }
 
@@ -211,48 +237,28 @@ export class LocalStore {
 }
 
   private static prepareSaveData(progress: AnimeProgress): Record<string, string> {
-    // First, ensure histoEp matches savedEp for each entry
-    const updatedEntries = progress.histo.entries.map(entry => ({
-        ...entry,
-        episode: progress.saved[entry.url]?.name || entry.episode
-    }));
-
-    // Create arrays in the website's custom format
-    const saveData: Record<string, string> = {
-        histoEp: `[${updatedEntries.map(e => `"${this.cleanEpisodeName(e.episode)}"`)}]`,
-        histoImg: `[${updatedEntries.map(e => `"${e.image}"`)}]`,
-        histoLang: `[${updatedEntries.map(e => `"${e.language}"`)}]`,
-        histoNom: `[${updatedEntries.map(e => `"${e.name}"`)}]`,
-        histoType: `[${updatedEntries.map(e => `"${e.type}"`)}]`,
-        histoUrl: `[${updatedEntries.map(e => `"${e.url}"`)}]`
+    const histoArrays = {
+        histoEp: `[${progress.histo.entries.map(e => `"${e.episode.replace(/['"]+/g, '')}"`)}]`,
+        histoImg: `[${progress.histo.entries.map(e => `"${e.image}"`)}]`,
+        histoLang: `[${progress.histo.entries.map(e => `"${e.language}"`)}]`,
+        histoNom: `[${progress.histo.entries.map(e => `"${e.name}"`)}]`,
+        histoType: `[${progress.histo.entries.map(e => `"${e.type}"`)}]`,
+        histoUrl: `[${progress.histo.entries.map(e => `"${e.url}"`)}]`
     };
 
-    // Save episode progress without JSON.stringify
+    const saveData: Record<string, string> = {};
+    Object.entries(histoArrays).forEach(([key, value]) => {
+        saveData[key] = value;
+    });
+
     Object.entries(progress.saved).forEach(([url, episode]) => {
         const storageUrl = url.replace(/^\//, '');
         saveData[`savedEpNb/${storageUrl}`] = String(episode.number);
-        saveData[`savedEpName/${storageUrl}`] = episode.name;  // No quotes here
+        saveData[`savedEpName/${storageUrl}`] = `"${episode.name.replace(/['"]+/g, '')}"`;
     });
 
     return saveData;
 }
-
-// Helper to clean episode names
-private static cleanEpisodeName(name: string): string {
-    // Remove any surrounding quotes
-    return name.replace(/^["']|["']$/g, '');
-}
-
-  private static parseJsonSafely(jsonString: string | null, defaultValue: string[] = []): string[] {
-    if (!jsonString) return defaultValue;
-    try {
-      const parsed = JSON.parse(jsonString);
-      return Array.isArray(parsed) ? parsed : defaultValue;
-    } catch (error) {
-      console.error('Error parsing JSON:', error);
-      return defaultValue;
-    }
-  }
 
   private static async getExtensionData(): Promise<AnimeProgress> {
     return new Promise((resolve) => {
